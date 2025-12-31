@@ -6,7 +6,8 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignoreUnknown": false
+    "ignoreUnknown": false,
+    "includes": ["src/**", "*.json", "*.md"]
   },
   "formatter": {
     "enabled": true,
@@ -21,7 +22,10 @@
   },
   "javascript": {
     "formatter": {
-      "quoteStyle": "double"
+      "quoteStyle": "double",
+      "trailingCommas": "all",
+      "arrowParentheses": "asNeeded",
+      "lineWidth": 100
     }
   },
   "assist": {

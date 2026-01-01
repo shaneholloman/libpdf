@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Scanner } from "#src/io/scanner";
+import { PdfDict } from "#src/objects/pdf-dict.ts";
 import { PdfRef } from "#src/objects/pdf-ref";
 import { loadFixture } from "#src/test-utils";
 import { DocumentParser } from "./document-parser";
@@ -129,6 +130,7 @@ describe("DocumentParser", () => {
       // Should still parse (pdf.js allows this), but we could make it strict
       // For now, we follow pdf.js behavior which allows header anywhere in first 1024 bytes
       const version = parser.parseHeader();
+
       expect(version).toBe("1.5");
     });
 
@@ -139,7 +141,7 @@ describe("DocumentParser", () => {
 
       const version = parser.parseHeader();
 
-      expect(version).toBe("1.4"); // Default version
+      expect(version).toBe("1.7"); // Default version (PDFBox uses 1.7 in lenient mode)
     });
 
     it("throws when header missing (strict)", () => {
@@ -209,7 +211,8 @@ describe("DocumentParser", () => {
       // Load pages (object 2)
       const pages = await doc.getObject(PdfRef.of(2, 0));
       expect(pages).not.toBeNull();
-      expect((pages as any).getName("Type")?.value).toBe("Pages");
+      expect(pages).toBeInstanceOf(PdfDict);
+      expect((pages as PdfDict).getName("Type")?.value).toBe("Pages");
     });
 
     it("returns null for non-existent objects", async () => {
@@ -239,8 +242,8 @@ describe("DocumentParser", () => {
     });
   });
 
-  describe("fixture PDFs", () => {
-    it("parses rot0.pdf", async () => {
+  describe("fixtures: basic", () => {
+    it("parses rot0.pdf - simple single-page PDF", async () => {
       const bytes = await loadFixture("basic", "rot0.pdf");
       const scanner = new Scanner(bytes);
       const parser = new DocumentParser(scanner);
@@ -253,10 +256,46 @@ describe("DocumentParser", () => {
       const catalog = await doc.getCatalog();
       expect(catalog).not.toBeNull();
       expect(catalog?.getName("Type")?.value).toBe("Catalog");
+
+      // Verify page structure
+      const pagesRef = catalog?.getRef("Pages");
+      expect(pagesRef).toBeDefined();
+      const pages = await doc.getObject(pagesRef!);
+      expect(pages).not.toBeNull();
+      expect((pages as PdfDict).getName("Type")?.value).toBe("Pages");
     });
 
-    it("parses document.pdf", async () => {
+    it("parses document.pdf - basic document structure", async () => {
       const bytes = await loadFixture("basic", "document.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(0);
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+      expect(catalog?.getName("Type")?.value).toBe("Catalog");
+    });
+
+    it("parses sample.pdf - larger multi-object PDF", async () => {
+      const bytes = await loadFixture("basic", "sample.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(5); // Should have multiple objects
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+
+    it("parses page_tree_multiple_levels.pdf - nested page tree", async () => {
+      const bytes = await loadFixture("basic", "page_tree_multiple_levels.pdf");
       const scanner = new Scanner(bytes);
       const parser = new DocumentParser(scanner);
 
@@ -266,10 +305,42 @@ describe("DocumentParser", () => {
 
       const catalog = await doc.getCatalog();
       expect(catalog).not.toBeNull();
+
+      // Navigate the page tree
+      const pagesRef = catalog?.getRef("Pages");
+      expect(pagesRef).toBeDefined();
+
+      const pages = await doc.getObject(pagesRef!);
+      expect(pages).not.toBeNull();
+      expect((pages as PdfDict).getName("Type")?.value).toBe("Pages");
+
+      // Should have Kids array
+      const kids = (pages as PdfDict).getArray("Kids");
+      expect(kids).toBeDefined();
+      expect(kids!.length).toBeGreaterThan(0);
     });
 
-    it("parses sample.pdf (larger file)", async () => {
-      const bytes = await loadFixture("basic", "sample.pdf");
+    it("parses SimpleForm2Fields.pdf - PDF with form fields", async () => {
+      const bytes = await loadFixture("basic", "SimpleForm2Fields.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+
+      // Form PDFs often have AcroForm entry in catalog
+      // Just verify we can parse it without errors
+      expect(doc.xref.size).toBeGreaterThan(0);
+    });
+  });
+
+  describe("fixtures: xref", () => {
+    it("parses sampleForSpec.pdf", async () => {
+      const bytes = await loadFixture("xref", "sampleForSpec.pdf");
       const scanner = new Scanner(bytes);
       const parser = new DocumentParser(scanner);
 
@@ -282,8 +353,8 @@ describe("DocumentParser", () => {
       expect(catalog).not.toBeNull();
     });
 
-    it("parses page_tree_multiple_levels.pdf", async () => {
-      const bytes = await loadFixture("basic", "page_tree_multiple_levels.pdf");
+    it("parses simple-openoffice.pdf - OpenOffice-generated PDF", async () => {
+      const bytes = await loadFixture("xref", "simple-openoffice.pdf");
       const scanner = new Scanner(bytes);
       const parser = new DocumentParser(scanner);
 
@@ -293,15 +364,201 @@ describe("DocumentParser", () => {
 
       const catalog = await doc.getCatalog();
       expect(catalog).not.toBeNull();
+    });
 
-      // Should be able to navigate to Pages
-      const pagesRef = catalog?.getRef("Pages");
-      expect(pagesRef).toBeDefined();
+    it("parses hello3.pdf", async () => {
+      const bytes = await loadFixture("xref", "hello3.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
 
-      if (pagesRef) {
-        const pages = await doc.getObject(pagesRef);
-        expect(pages).not.toBeNull();
-      }
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(0);
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+  });
+
+  describe("fixtures: text", () => {
+    it("parses text/rot0.pdf", async () => {
+      const bytes = await loadFixture("text", "rot0.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+
+    it("parses openoffice-test-document.pdf", async () => {
+      const bytes = await loadFixture("text", "openoffice-test-document.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+
+    it("parses yaddatest.pdf", async () => {
+      const bytes = await loadFixture("text", "yaddatest.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+  });
+
+  describe("fixtures: filter", () => {
+    it("parses unencrypted.pdf - various stream filters", async () => {
+      const bytes = await loadFixture("filter", "unencrypted.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(0);
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+
+    it("parses lzw-sample.pdf - LZW-compressed streams", async () => {
+      const bytes = await loadFixture("filter", "lzw-sample.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const catalog = await doc.getCatalog();
+      expect(catalog).not.toBeNull();
+    });
+  });
+
+  describe("fixtures: encryption (detection only)", () => {
+    it("detects encryption in PasswordSample-40bit.pdf", async () => {
+      const bytes = await loadFixture("encryption", "PasswordSample-40bit.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      // Should parse structure even if encrypted
+      expect(doc.version).toBeDefined();
+
+      // Encrypted PDFs have /Encrypt in trailer
+      const encrypt = doc.trailer.get("Encrypt");
+      expect(encrypt).toBeDefined();
+    });
+
+    it("detects encryption in PasswordSample-128bit.pdf", async () => {
+      const bytes = await loadFixture("encryption", "PasswordSample-128bit.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const encrypt = doc.trailer.get("Encrypt");
+      expect(encrypt).toBeDefined();
+    });
+
+    it("detects encryption in PasswordSample-256bit.pdf", async () => {
+      const bytes = await loadFixture("encryption", "PasswordSample-256bit.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const encrypt = doc.trailer.get("Encrypt");
+      expect(encrypt).toBeDefined();
+    });
+
+    it("detects encryption in AESkeylength128.pdf", async () => {
+      const bytes = await loadFixture("encryption", "AESkeylength128.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const encrypt = doc.trailer.get("Encrypt");
+      expect(encrypt).toBeDefined();
+    });
+
+    it("detects encryption in AESkeylength256.pdf", async () => {
+      const bytes = await loadFixture("encryption", "AESkeylength256.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      expect(doc.version).toBeDefined();
+
+      const encrypt = doc.trailer.get("Encrypt");
+      expect(encrypt).toBeDefined();
+    });
+  });
+
+  describe("fixtures: malformed (recovery)", () => {
+    it("recovers PDFBOX-3068.pdf - malformed xref", async () => {
+      const bytes = await loadFixture("malformed", "PDFBOX-3068.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      // Should recover, possibly with warnings
+      expect(doc.xref.size).toBeGreaterThan(0);
+
+      // May or may not have catalog depending on severity
+      const catalog = await doc.getCatalog();
+      // Just verify we don't crash
+      expect(doc.version).toBeDefined();
+    });
+
+    it("recovers MissingCatalog.pdf - no catalog object", async () => {
+      const bytes = await loadFixture("malformed", "MissingCatalog.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      // Should parse but catalog may be null or recovery may find something
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(0);
+    });
+
+    it("handles PDFBOX-6040-nodeloop.pdf - circular references", async () => {
+      const bytes = await loadFixture("malformed", "PDFBOX-6040-nodeloop.pdf");
+      const scanner = new Scanner(bytes);
+      const parser = new DocumentParser(scanner);
+
+      const doc = await parser.parse();
+
+      // Should handle circular references without infinite loop
+      expect(doc.version).toBeDefined();
+      expect(doc.xref.size).toBeGreaterThan(0);
     });
   });
 

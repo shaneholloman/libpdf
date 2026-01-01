@@ -1,12 +1,13 @@
 import type { Scanner } from "#src/io/scanner";
 import type { PdfObject } from "#src/objects/object";
-import type { PdfDict } from "#src/objects/pdf-dict";
+import { PdfDict } from "#src/objects/pdf-dict";
+import { PdfNumber } from "#src/objects/pdf-number";
 import { PdfRef } from "#src/objects/pdf-ref";
 import type { PdfStream } from "#src/objects/pdf-stream";
 import { BruteForceParser } from "./brute-force-parser";
 import { IndirectObjectParser, type LengthResolver } from "./indirect-object-parser";
 import { ObjectStreamParser } from "./object-stream-parser";
-import { type XRefData, type XRefEntry, XRefParser } from "./xref-parser";
+import { type XRefEntry, XRefParser } from "./xref-parser";
 
 /**
  * Options for document parsing.
@@ -46,7 +47,7 @@ const PDF_HEADER = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
 const VERSION_PATTERN = /^[1-9]\.\d$/;
 
 // Default version when unparseable (PDFBox uses 1.7)
-const DEFAULT_VERSION = "1.4";
+const DEFAULT_VERSION = "1.7";
 
 // Maximum bytes to search for header
 const HEADER_SEARCH_LIMIT = 1024;
@@ -90,9 +91,12 @@ export class DocumentParser {
     } catch (error) {
       if (this.options.lenient) {
         const message = error instanceof Error ? error.message : String(error);
+
         this.warnings.push(`Normal parsing failed: ${message}`);
+
         return this.parseWithRecovery();
       }
+
       throw error;
     }
   }
@@ -106,6 +110,7 @@ export class DocumentParser {
 
     // Phase 2: Find startxref
     const xrefParser = new XRefParser(this.scanner);
+
     const startXRef = xrefParser.findStartXRef();
 
     // Phase 3: Parse XRef chain (follow /Prev)
@@ -121,6 +126,7 @@ export class DocumentParser {
   private async parseWithRecovery(): Promise<ParsedDocument> {
     // Try to get version even if header is malformed
     let version = DEFAULT_VERSION;
+
     try {
       version = this.parseHeader();
     } catch {
@@ -129,6 +135,7 @@ export class DocumentParser {
 
     // Use brute-force parser to find objects
     const bruteForce = new BruteForceParser(this.scanner);
+
     const result = bruteForce.recover();
 
     if (result === null) {
@@ -139,19 +146,19 @@ export class DocumentParser {
 
     // Build xref from recovered entries
     const xref = new Map<number, XRefEntry>();
+
     for (const [key, offset] of result.xref.entries()) {
       // Key is "objNum genNum"
       const [objNumStr, genNumStr] = key.split(" ");
+
       const objNum = parseInt(objNumStr, 10);
       const generation = parseInt(genNumStr, 10);
+
       xref.set(objNum, { type: "uncompressed", offset, generation });
     }
 
     // Build trailer from recovered root
-    const { PdfDict: PdfDictClass } = await import("#src/objects/pdf-dict");
-    const { PdfNumber } = await import("#src/objects/pdf-number");
-
-    const trailer = new PdfDictClass([
+    const trailer = new PdfDict([
       ["Root", result.trailer.Root],
       ["Size", new PdfNumber(result.trailer.Size)],
     ]);
@@ -243,13 +250,18 @@ export class DocumentParser {
     const queue: number[] = [startOffset];
 
     while (queue.length > 0) {
-      const offset = queue.shift()!;
+      const offset = queue.shift();
+
+      if (offset === undefined) {
+        break;
+      }
 
       // Circular reference check
       if (visited.has(offset)) {
         this.warnings.push(`Circular xref reference at offset ${offset}`);
         continue;
       }
+
       visited.add(offset);
 
       try {
@@ -273,10 +285,12 @@ export class DocumentParser {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+
         if (this.options.lenient) {
           this.warnings.push(`Error parsing xref at ${offset}: ${message}`);
           continue;
         }
+
         throw error;
       }
     }
@@ -306,19 +320,25 @@ export class DocumentParser {
     const lengthResolver: LengthResolver = (ref: PdfRef) => {
       // Synchronous lookup in cache only - can't do async here
       const key = `${ref.objectNumber} ${ref.generation}`;
+
       const cached = cache.get(key);
+
       if (cached && cached.type === "number") {
         return (cached as { value: number }).value;
       }
 
       // Try to parse synchronously if it's a simple uncompressed object
       const entry = xref.get(ref.objectNumber);
+
       if (entry?.type === "uncompressed") {
         try {
           const parser = new IndirectObjectParser(this.scanner);
+
           const result = parser.parseObjectAt(entry.offset);
+
           if (result.value.type === "number") {
             cache.set(key, result.value);
+
             return (result.value as { value: number }).value;
           }
         } catch {
@@ -334,6 +354,7 @@ export class DocumentParser {
 
       // Check cache
       if (cache.has(key)) {
+        // biome-ignore lint/style/noNonNullAssertion: checked with .has(...)
         return cache.get(key)!;
       }
 
@@ -351,6 +372,7 @@ export class DocumentParser {
 
         case "uncompressed": {
           const parser = new IndirectObjectParser(this.scanner, lengthResolver);
+
           const result = parser.parseObjectAt(entry.offset);
 
           // Verify generation matches
@@ -361,6 +383,7 @@ export class DocumentParser {
           }
 
           obj = result.value;
+
           break;
         }
 
@@ -379,10 +402,12 @@ export class DocumentParser {
             }
 
             streamParser = new ObjectStreamParser(streamObj as PdfStream);
+
             objectStreamCache.set(entry.streamObjNum, streamParser);
           }
 
           obj = await streamParser.getObject(entry.indexInStream);
+
           break;
         }
       }
@@ -397,11 +422,13 @@ export class DocumentParser {
 
     const getCatalog = async (): Promise<PdfDict | null> => {
       const rootRef = trailer.getRef("Root");
+
       if (!rootRef) {
         return null;
       }
 
       const root = await getObject(rootRef);
+
       if (!root || (root.type !== "dict" && root.type !== "stream")) {
         return null;
       }

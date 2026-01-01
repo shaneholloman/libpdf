@@ -11,7 +11,8 @@ import type { PdfString } from "./pdf-string";
  *
  * In PDF: `<< /Type /Page /MediaBox [0 0 612 792] >>`
  *
- * Keys are always PdfName. Supports an optional mutation hook.
+ * Keys are always PdfName. Tracks modifications via a dirty flag
+ * for incremental save support.
  */
 export class PdfDict {
   get type(): "dict" | "stream" {
@@ -19,7 +20,12 @@ export class PdfDict {
   }
 
   private entries = new Map<PdfName, PdfObject>();
-  private onMutate?: () => void;
+
+  /**
+   * Dirty flag for modification tracking.
+   * Set to true when the dict is mutated, cleared after save.
+   */
+  dirty = false;
 
   constructor(entries?: Iterable<[PdfName | string, PdfObject]>) {
     if (entries) {
@@ -32,15 +38,10 @@ export class PdfDict {
   }
 
   /**
-   * Set a callback to be invoked whenever the dict is mutated.
-   * Used by the document layer for dirty tracking.
+   * Clear the dirty flag. Called after saving.
    */
-  setMutationHandler(handler: () => void): void {
-    this.onMutate = handler;
-  }
-
-  protected notifyMutation(): void {
-    this.onMutate?.();
+  clearDirty(): void {
+    this.dirty = false;
   }
 
   get size(): number {
@@ -63,8 +64,7 @@ export class PdfDict {
     const name = typeof key === "string" ? PdfName.of(key) : key;
 
     this.entries.set(name, value);
-
-    this.notifyMutation();
+    this.dirty = true;
   }
 
   /**
@@ -84,7 +84,7 @@ export class PdfDict {
     const existed = this.entries.delete(name);
 
     if (existed) {
-      this.notifyMutation();
+      this.dirty = true;
     }
 
     return existed;

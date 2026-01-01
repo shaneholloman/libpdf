@@ -5,9 +5,9 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 ## Core Capabilities
 
 ### 1. Encryption & Security
-- [ ] **Load encrypted PDFs** — Support password-protected documents (user password, owner password)
-- [ ] **Decrypt on load** — Handle all standard encryption handlers (RC4, AES-128, AES-256)
-- [ ] **Encrypt on save** — Apply encryption when writing PDFs
+- [x] **Load encrypted PDFs** — Support password-protected documents (user password, owner password)
+- [x] **Decrypt on load** — Handle all standard encryption handlers (RC4, AES-128, AES-256)
+- [ ] **Encrypt on save** — Apply encryption when writing PDFs (encryption logic done, needs writer)
 
 ### 2. Digital Signatures
 - [ ] **Add digital signatures** — Sign PDFs with certificates

@@ -48,10 +48,11 @@ export class PdfStream extends PdfDict {
 
   /**
    * Set new stream data.
+   * Marks the stream as dirty for modification tracking.
    */
-  set data(value: Uint8Array) {
+  setData(value: Uint8Array): void {
     this._data = value;
-    this.notifyMutation();
+    this.dirty = true;
   }
 
   /**

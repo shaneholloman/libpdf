@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { PdfArray } from "./pdf-array";
 import { PdfNumber } from "./pdf-number";
 
@@ -95,60 +95,61 @@ describe("PdfArray", () => {
     });
   });
 
-  describe("mutation hook", () => {
-    it("calls handler on set()", () => {
-      const handler = vi.fn();
+  describe("dirty flag", () => {
+    it("starts not dirty", () => {
+      const arr = new PdfArray();
 
+      expect(arr.dirty).toBe(false);
+    });
+
+    it("set() marks as dirty", () => {
       const arr = PdfArray.of(PdfNumber.of(1));
 
-      arr.setMutationHandler(handler);
       arr.set(0, PdfNumber.of(2));
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(arr.dirty).toBe(true);
     });
 
-    it("calls handler on push()", () => {
-      const handler = vi.fn();
-
+    it("push() marks as dirty", () => {
       const arr = new PdfArray();
 
-      arr.setMutationHandler(handler);
       arr.push(PdfNumber.of(1));
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(arr.dirty).toBe(true);
     });
 
-    it("calls handler on pop() when item exists", () => {
-      const handler = vi.fn();
-
+    it("pop() marks as dirty when item exists", () => {
       const arr = PdfArray.of(PdfNumber.of(1));
 
-      arr.setMutationHandler(handler);
       arr.pop();
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(arr.dirty).toBe(true);
     });
 
-    it("does not call handler on pop() when empty", () => {
-      const handler = vi.fn();
-
+    it("pop() does not mark dirty when empty", () => {
       const arr = new PdfArray();
 
-      arr.setMutationHandler(handler);
       arr.pop();
 
-      expect(handler).not.toHaveBeenCalled();
+      expect(arr.dirty).toBe(false);
     });
 
-    it("calls handler on remove()", () => {
-      const handler = vi.fn();
-
+    it("remove() marks as dirty", () => {
       const arr = PdfArray.of(PdfNumber.of(1), PdfNumber.of(2));
 
-      arr.setMutationHandler(handler);
       arr.remove(0);
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(arr.dirty).toBe(true);
+    });
+
+    it("clearDirty() resets the flag", () => {
+      const arr = new PdfArray();
+
+      arr.push(PdfNumber.of(1));
+      expect(arr.dirty).toBe(true);
+
+      arr.clearDirty();
+      expect(arr.dirty).toBe(false);
     });
   });
 });

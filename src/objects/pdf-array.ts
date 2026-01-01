@@ -5,7 +5,7 @@ import type { PdfObject } from "./object";
  *
  * In PDF: `[1 2 3]`, `[/Name (string) 42]`
  *
- * Supports an optional mutation hook for change tracking.
+ * Tracks modifications via a dirty flag for incremental save support.
  */
 export class PdfArray {
   get type(): "array" {
@@ -13,7 +13,12 @@ export class PdfArray {
   }
 
   private items: PdfObject[] = [];
-  private onMutate?: () => void;
+
+  /**
+   * Dirty flag for modification tracking.
+   * Set to true when the array is mutated, cleared after save.
+   */
+  dirty = false;
 
   constructor(items?: PdfObject[]) {
     if (items) {
@@ -22,15 +27,10 @@ export class PdfArray {
   }
 
   /**
-   * Set a callback to be invoked whenever the array is mutated.
-   * Used by the document layer for dirty tracking.
+   * Clear the dirty flag. Called after saving.
    */
-  setMutationHandler(handler: () => void): void {
-    this.onMutate = handler;
-  }
-
-  private notifyMutation(): void {
-    this.onMutate?.();
+  clearDirty(): void {
+    this.dirty = false;
   }
 
   get length(): number {
@@ -49,18 +49,18 @@ export class PdfArray {
    */
   set(index: number, value: PdfObject): void {
     this.items[index] = value;
-    this.notifyMutation();
+    this.dirty = true;
   }
 
   push(...values: PdfObject[]): void {
     this.items.push(...values);
-    this.notifyMutation();
+    this.dirty = true;
   }
 
   pop(): PdfObject | undefined {
     const value = this.items.pop();
     if (value !== undefined) {
-      this.notifyMutation();
+      this.dirty = true;
     }
     return value;
   }
@@ -70,7 +70,7 @@ export class PdfArray {
    */
   remove(index: number): void {
     this.items.splice(index, 1);
-    this.notifyMutation();
+    this.dirty = true;
   }
 
   /**

@@ -57,6 +57,9 @@ export interface ParsedDocument {
   /** Warnings encountered during parsing */
   warnings: string[];
 
+  /** Whether document was recovered via brute-force parsing */
+  recoveredViaBruteForce: boolean;
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Encryption
   // ─────────────────────────────────────────────────────────────────────────────
@@ -181,7 +184,7 @@ export class DocumentParser {
     const { xref, trailer } = await this.parseXRefChain(xrefParser, startXRef);
 
     // Phase 4: Build document with lazy object loading
-    return this.buildDocument(version, xref, trailer);
+    return this.buildDocument(version, xref, trailer, false);
   }
 
   /**
@@ -236,7 +239,7 @@ export class DocumentParser {
       ["Size", new PdfNumber(result.trailer.Size)],
     ]);
 
-    return this.buildDocument(version, xref, trailer);
+    return this.buildDocument(version, xref, trailer, true);
   }
 
   /**
@@ -382,6 +385,7 @@ export class DocumentParser {
     version: string,
     xref: Map<number, XRefEntry>,
     trailer: PdfDict,
+    recoveredViaBruteForce: boolean,
   ): ParsedDocument {
     // Object cache: "objNum genNum" -> PdfObject
     const cache = new Map<string, PdfObject>();
@@ -746,6 +750,7 @@ export class DocumentParser {
       trailer,
       xref,
       warnings: this.warnings,
+      recoveredViaBruteForce,
 
       // Encryption
       isEncrypted,

@@ -13,6 +13,9 @@ This document outlines the architecture of @libpdf/core. It's a living document 
 │                     DocumentParser                              │
 │           Top-level orchestration and document access           │
 ├─────────────────────────────────────────────────────────────────┤
+│                     Security Layer                              │
+│      (StandardSecurityHandler, Ciphers, Key Derivation)         │
+├─────────────────────────────────────────────────────────────────┤
 │                      Object Layer                               │
 │    (PdfDict, PdfArray, PdfStream, PdfRef, PdfName, etc.)        │
 ├─────────────────────────────────────────────────────────────────┤
@@ -178,6 +181,57 @@ Recovery parser for corrupted PDFs.
 - Extracts objects from object streams (ObjStm)
 - Finds document root (Catalog or Pages fallback)
 
+### Security Layer (`src/security/`)
+
+Handles PDF encryption and decryption for the Standard security handler.
+
+#### Encryption Revisions
+
+| Revision | Algorithm | Key Size | Notes |
+|----------|-----------|----------|-------|
+| R2 | RC4 | 40-bit | PDF 1.1, legacy |
+| R3 | RC4 | 40-128 bit | PDF 1.4 |
+| R4 | RC4 or AES-128 | 128-bit | PDF 1.5, crypt filters |
+| R5 | AES-256 | 256-bit | PDF 1.7 ext 3 (deprecated) |
+| R6 | AES-256 | 256-bit | PDF 2.0, current standard |
+
+#### Key Components
+
+**StandardSecurityHandler** — Main entry point for encryption/decryption.
+- Authenticates user/owner passwords
+- Provides `decryptString()` and `decryptStream()` methods
+- Tracks permission flags
+
+**Ciphers** (`src/security/ciphers/`)
+- `RC4Cipher` — Stream cipher for R2-R4
+- `AESCipher` — Block cipher for R4+ (CBC mode with PKCS7 padding)
+
+**Key Derivation** (`src/security/key-derivation/`)
+- `md5-based.ts` — R2-R4 key derivation using MD5 + RC4
+- `sha-based.ts` — R5-R6 key derivation using SHA-256/384/512
+
+**Handlers** (`src/security/handlers/`)
+- `AbstractSecurityHandler` — Interface for encryption handlers
+- `RC4Handler` — R2-R4 with per-object key derivation
+- `AES128Handler` — R4 AES-128-CBC
+- `AES256Handler` — R5-R6 AES-256-CBC (document-wide key)
+- `IdentityHandler` — Passthrough for unencrypted content
+
+**Credentials** (`src/security/credentials.ts`)
+```typescript
+type DecryptionCredential =
+  | { type: "password"; password: string }
+  | { type: "certificate"; certificate: Uint8Array; privateKey: Uint8Array };
+```
+
+**Integration with DocumentParser**
+```typescript
+const doc = await DocumentParser.parse(bytes, {
+  credentials: "secret",  // String shorthand for password
+  // or: credentials: { type: "password", password: "secret" }
+});
+```
+
 #### DocumentParser
 
 Top-level orchestrator for PDF document loading.
@@ -223,6 +277,14 @@ DocumentParser.parse()
     │       ├─► parseTable() (traditional)
     │       └─► parseStream() (PDF 1.5+)
     │
+    ├─► If /Encrypt in trailer:
+    │       │
+    │       ▼
+    │   StandardSecurityHandler
+    │       ├─► parseEncryptionDict()
+    │       ├─► authenticate(credentials)
+    │       └─► Store handler for object decryption
+    │
     └─► On failure: BruteForceParser.recover()
             ├─► scanForObjects()
             ├─► extractFromObjectStreams()
@@ -242,8 +304,12 @@ ParsedDocument.getObject()
     └─► Lookup in xref
             │
             ├─► "uncompressed" ─► IndirectObjectParser
+            │       │
+            │       └─► If encrypted: decrypt strings/streams
             │
             └─► "compressed" ─► ObjectStreamParser
+                    │
+                    └─► Decompress stream (already decrypted)
 ```
 
 ---
@@ -293,10 +359,18 @@ When implementing, consult the reference libraries in `checkouts/`:
 
 ---
 
-## Not Yet Built
+## Status
 
+### Complete
+- [x] I/O Layer (Scanner)
+- [x] Objects Layer (PdfDict, PdfArray, PdfStream, etc.)
+- [x] Filters (Flate, LZW, ASCII85, ASCIIHex, RunLength)
+- [x] Parser Layer (TokenReader, ObjectParser, XRefParser, BruteForceParser)
+- [x] DocumentParser with lazy loading and recovery
+- [x] **Encryption/decryption** (R2-R6, RC4, AES-128, AES-256)
+
+### Not Yet Built
 - [ ] High-level API (PDF, Page, Form classes)
-- [ ] Encryption/decryption support
 - [ ] Linearized PDF fast-open
 - [ ] Incremental update writing
 - [ ] Content stream parsing
@@ -304,3 +378,4 @@ When implementing, consult the reference libraries in `checkouts/`:
 - [ ] Font handling
 - [ ] Annotation support
 - [ ] Digital signatures
+- [ ] Certificate-based decryption (/Adobe.PubSec handler)

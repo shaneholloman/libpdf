@@ -1,0 +1,508 @@
+import { describe, expect, it } from "vitest";
+import { ObjectRegistry } from "#src/document/object-registry";
+import { PdfArray } from "#src/objects/pdf-array";
+import { PdfDict } from "#src/objects/pdf-dict";
+import { PdfName } from "#src/objects/pdf-name";
+import { PdfNumber } from "#src/objects/pdf-number";
+import { PdfRef } from "#src/objects/pdf-ref";
+import { PdfStream } from "#src/objects/pdf-stream";
+import { PdfString } from "#src/objects/pdf-string";
+import { verifyIncrementalSave, writeComplete, writeIncremental } from "./pdf-writer";
+
+describe("writeComplete", () => {
+  it("produces valid PDF header", () => {
+    const registry = new ObjectRegistry();
+
+    // Minimal PDF structure
+    const catalog = PdfDict.of({
+      Type: PdfName.Catalog,
+      Pages: PdfRef.of(2, 0),
+    });
+    const catalogRef = registry.register(catalog);
+
+    const pages = PdfDict.of({
+      Type: PdfName.Pages,
+      Count: PdfNumber.of(0),
+      Kids: new PdfArray([]),
+    });
+
+    registry.register(pages);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toMatch(/^%PDF-1\.7\n/);
+  });
+
+  it("includes binary comment after header", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+
+    // Binary comment should be second line (bytes 9-14 approximately)
+    // %âãÏÓ (0x25 0xe2 0xe3 0xcf 0xd3)
+    expect(result.bytes[9]).toBe(0x25); // %
+    expect(result.bytes[10]).toBeGreaterThan(127); // High byte
+  });
+
+  it("writes all registered objects", () => {
+    const registry = new ObjectRegistry();
+
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const info = PdfDict.of({
+      Title: PdfString.fromString("Test PDF"),
+    });
+
+    registry.register(info);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain("1 0 obj");
+    expect(text).toContain("2 0 obj");
+  });
+
+  it("includes xref section", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain("xref");
+    expect(text).toContain("trailer");
+  });
+
+  it("includes trailer with /Root", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain(`/Root ${catalogRef.objectNumber} 0 R`);
+  });
+
+  it("includes trailer with /Size", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    registry.register(new PdfDict()); // Second object
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    // Size should be max object number + 1
+    expect(text).toContain("/Size 3"); // 0 (free) + 1 + 2
+  });
+
+  it("includes startxref with correct offset", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    // startxref should match returned offset
+    expect(text).toContain(`startxref\n${result.xrefOffset}\n`);
+  });
+
+  it("ends with %%EOF", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toMatch(/%%EOF\n$/);
+  });
+
+  it("respects version option", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, {
+      root: catalogRef,
+      version: "2.0",
+    });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toMatch(/^%PDF-2\.0\n/);
+  });
+
+  it("can use xref stream", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, {
+      root: catalogRef,
+      useXRefStream: true,
+    });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain("/Type /XRef");
+    // Traditional xref starts with "xref\n" followed by subsection header like "0 1"
+    // XRef stream doesn't have this pattern
+    expect(text).not.toMatch(/^xref\n\d+ \d+/m);
+  });
+
+  it("includes Info in trailer when provided", () => {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry.register(catalog);
+
+    const info = PdfDict.of({ Title: PdfString.fromString("Test") });
+    const infoRef = registry.register(info);
+
+    const result = writeComplete(registry, {
+      root: catalogRef,
+      info: infoRef,
+    });
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain(`/Info ${infoRef.objectNumber} 0 R`);
+  });
+});
+
+describe("writeIncremental", () => {
+  /**
+   * Create a minimal PDF for testing.
+   */
+  function createMinimalPdf(): {
+    bytes: Uint8Array;
+    xrefOffset: number;
+    registry: ObjectRegistry;
+    catalogRef: PdfRef;
+  } {
+    const registry = new ObjectRegistry();
+    const catalog = PdfDict.of({
+      Type: PdfName.Catalog,
+      Pages: PdfRef.of(2, 0),
+    });
+    const catalogRef = registry.register(catalog);
+
+    const pages = PdfDict.of({
+      Type: PdfName.Pages,
+      Count: PdfNumber.of(0),
+      Kids: new PdfArray([]),
+    });
+
+    registry.register(pages);
+
+    // Commit objects so they're "loaded"
+    registry.commitNewObjects();
+
+    const result = writeComplete(registry, { root: catalogRef });
+
+    // Clear dirty flags (simulating a clean load)
+    catalog.clearDirty();
+    pages.clearDirty();
+
+    return {
+      bytes: result.bytes,
+      xrefOffset: result.xrefOffset,
+      registry,
+      catalogRef,
+    };
+  }
+
+  it("preserves original bytes exactly", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+    const originalLength = bytes.length;
+
+    // Modify something
+    const catalog = registry.getObject(catalogRef) as PdfDict;
+
+    catalog.set("ModDate", PdfString.fromString("D:20240101"));
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    // Original bytes should be preserved
+    for (let i = 0; i < originalLength; i++) {
+      expect(result.bytes[i]).toBe(bytes[i]);
+    }
+  });
+
+  it("appends modified objects after original", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+    const originalLength = bytes.length;
+
+    const catalog = registry.getObject(catalogRef) as PdfDict;
+
+    catalog.set("ModDate", PdfString.fromString("D:20240101"));
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    // Result should be longer than original
+    expect(result.bytes.length).toBeGreaterThan(originalLength);
+
+    // New content should be after original
+    const newContent = new TextDecoder().decode(result.bytes.slice(originalLength));
+
+    expect(newContent).toContain("1 0 obj"); // Modified catalog
+  });
+
+  it("includes new xref with /Prev pointer", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    const catalog = registry.getObject(catalogRef) as PdfDict;
+
+    catalog.set("ModDate", PdfString.fromString("D:20240101"));
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain(`/Prev ${xrefOffset}`);
+  });
+
+  it("appends new objects", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    // Register a new object
+    const newAnnot = PdfDict.of({
+      Type: PdfName.of("Annot"),
+      Subtype: PdfName.of("Text"),
+    });
+
+    registry.register(newAnnot);
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain("/Type /Annot");
+    expect(text).toContain("3 0 obj"); // New object number
+  });
+
+  it("returns original bytes when no changes", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    // Should return original unchanged
+    expect(result.bytes).toBe(bytes);
+    expect(result.xrefOffset).toBe(xrefOffset);
+  });
+
+  it("clears dirty flags after save", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    const catalog = registry.getObject(catalogRef) as PdfDict;
+
+    catalog.set("ModDate", PdfString.fromString("D:20240101"));
+    expect(catalog.dirty).toBe(true);
+
+    writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    expect(catalog.dirty).toBe(false);
+  });
+
+  it("moves new objects to loaded after save", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    const newDict = new PdfDict();
+    const newRef = registry.register(newDict);
+
+    expect(registry.isNew(newRef)).toBe(true);
+
+    writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    expect(registry.isNew(newRef)).toBe(false);
+  });
+
+  it("ends with %%EOF", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    const catalog = registry.getObject(catalogRef) as PdfDict;
+
+    catalog.set("Modified", PdfNumber.of(1));
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toMatch(/%%EOF\n$/);
+  });
+
+  it("handles stream objects", () => {
+    const { bytes, xrefOffset, registry, catalogRef } = createMinimalPdf();
+
+    // Create new stream
+    const stream = new PdfStream(
+      [["Filter", PdfName.of("FlateDecode")]],
+      new Uint8Array([1, 2, 3, 4, 5]),
+    );
+
+    registry.register(stream);
+
+    const result = writeIncremental(registry, {
+      originalBytes: bytes,
+      originalXRefOffset: xrefOffset,
+      root: catalogRef,
+    });
+
+    const text = new TextDecoder().decode(result.bytes);
+
+    expect(text).toContain("/Filter /FlateDecode");
+    expect(text).toContain("stream");
+    expect(text).toContain("endstream");
+  });
+});
+
+describe("verifyIncrementalSave", () => {
+  it("validates preserved original bytes", () => {
+    const original = new TextEncoder().encode("original content");
+    const result = new Uint8Array([...original, ...new TextEncoder().encode("\n%%EOF\n")]);
+
+    const verification = verifyIncrementalSave(original, result);
+
+    expect(verification.valid).toBe(true);
+  });
+
+  it("detects modified original bytes", () => {
+    const original = new TextEncoder().encode("original content");
+    const result = new TextEncoder().encode("modified content%%EOF\n");
+
+    const verification = verifyIncrementalSave(original, result);
+
+    expect(verification.valid).toBe(false);
+    expect(verification.error).toContain("Byte mismatch");
+  });
+
+  it("detects missing %%EOF", () => {
+    const original = new TextEncoder().encode("content");
+    const result = new TextEncoder().encode("content\nmore stuff");
+
+    const verification = verifyIncrementalSave(original, result);
+
+    expect(verification.valid).toBe(false);
+    expect(verification.error).toContain("%%EOF");
+  });
+
+  it("detects result shorter than original", () => {
+    const original = new TextEncoder().encode("long original content");
+    const result = new TextEncoder().encode("short");
+
+    const verification = verifyIncrementalSave(original, result);
+
+    expect(verification.valid).toBe(false);
+    expect(verification.error).toContain("shorter");
+  });
+});
+
+describe("round-trip", () => {
+  it("modified PDF can be parsed (structure check)", () => {
+    const registry = new ObjectRegistry();
+
+    // Create a proper minimal PDF structure
+    const pages = PdfDict.of({
+      Type: PdfName.Pages,
+      Count: PdfNumber.of(0),
+      Kids: new PdfArray([]),
+    });
+    const pagesRef = registry.register(pages);
+
+    const catalog = PdfDict.of({
+      Type: PdfName.Catalog,
+      Pages: pagesRef,
+    });
+    const catalogRef = registry.register(catalog);
+
+    const result = writeComplete(registry, { root: catalogRef });
+    const text = new TextDecoder().decode(result.bytes);
+
+    // Verify structure
+    expect(text).toContain("%PDF-");
+    expect(text).toContain("/Type /Catalog");
+    expect(text).toContain("/Type /Pages");
+    expect(text).toContain("xref");
+    expect(text).toContain("trailer");
+    expect(text).toContain("/Root");
+    expect(text).toContain("startxref");
+    expect(text).toContain("%%EOF");
+  });
+
+  it("multiple incremental saves work correctly", () => {
+    // First save
+    const registry1 = new ObjectRegistry();
+    const catalog = PdfDict.of({ Type: PdfName.Catalog });
+    const catalogRef = registry1.register(catalog);
+
+    registry1.commitNewObjects();
+    catalog.clearDirty();
+
+    const result1 = writeComplete(registry1, { root: catalogRef });
+
+    // Second save (first incremental)
+    catalog.set("ModDate", PdfString.fromString("D:20240101"));
+
+    const result2 = writeIncremental(registry1, {
+      originalBytes: result1.bytes,
+      originalXRefOffset: result1.xrefOffset,
+      root: catalogRef,
+    });
+
+    // Third save (second incremental)
+    catalog.set("ModDate", PdfString.fromString("D:20240102"));
+
+    const result3 = writeIncremental(registry1, {
+      originalBytes: result2.bytes,
+      originalXRefOffset: result2.xrefOffset,
+      root: catalogRef,
+    });
+
+    // Verify all original bytes preserved
+    for (let i = 0; i < result1.bytes.length; i++) {
+      expect(result3.bytes[i]).toBe(result1.bytes[i]);
+    }
+
+    // Verify has /Prev chain
+    const text = new TextDecoder().decode(result3.bytes);
+
+    expect(text).toContain(`/Prev ${result2.xrefOffset}`);
+  });
+});

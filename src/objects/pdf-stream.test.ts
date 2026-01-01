@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { PdfDict } from "./pdf-dict";
 import { PdfName } from "./pdf-name";
 import { PdfNumber } from "./pdf-number";
@@ -63,34 +63,39 @@ describe("PdfStream", () => {
   });
 
   describe("data mutation", () => {
-    it("can update data", () => {
+    it("setData() updates data", () => {
       const stream = new PdfStream();
       const newData = new Uint8Array([10, 20, 30]);
 
-      stream.data = newData;
+      stream.setData(newData);
 
       expect(stream.data).toBe(newData);
     });
 
-    it("triggers mutation handler on data change", () => {
-      const handler = vi.fn();
-
+    it("setData() marks as dirty", () => {
       const stream = new PdfStream();
 
-      stream.setMutationHandler(handler);
-      stream.data = new Uint8Array([1, 2, 3]);
+      stream.setData(new Uint8Array([1, 2, 3]));
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(stream.dirty).toBe(true);
     });
 
-    it("triggers mutation handler on dict change", () => {
-      const handler = vi.fn();
-
+    it("dict changes mark as dirty", () => {
       const stream = new PdfStream();
-      stream.setMutationHandler(handler);
+
       stream.set("Filter", PdfName.FlateDecode);
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(stream.dirty).toBe(true);
+    });
+
+    it("clearDirty() resets the flag", () => {
+      const stream = new PdfStream();
+
+      stream.setData(new Uint8Array([1, 2, 3]));
+      expect(stream.dirty).toBe(true);
+
+      stream.clearDirty();
+      expect(stream.dirty).toBe(false);
     });
   });
 

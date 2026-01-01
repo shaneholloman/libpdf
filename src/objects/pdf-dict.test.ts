@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { PdfArray } from "./pdf-array";
 import { PdfDict } from "./pdf-dict";
 import { PdfName } from "./pdf-name";
@@ -139,38 +139,46 @@ describe("PdfDict", () => {
     });
   });
 
-  describe("mutation hook", () => {
-    it("calls handler on set()", () => {
-      const handler = vi.fn();
-
+  describe("dirty flag", () => {
+    it("starts not dirty", () => {
       const dict = new PdfDict();
 
-      dict.setMutationHandler(handler);
+      expect(dict.dirty).toBe(false);
+    });
+
+    it("set() marks as dirty", () => {
+      const dict = new PdfDict();
+
       dict.set("Type", PdfName.Page);
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(dict.dirty).toBe(true);
     });
 
-    it("calls handler on delete() when key exists", () => {
-      const handler = vi.fn();
-
+    it("delete() marks as dirty when key exists", () => {
       const dict = PdfDict.of({ Type: PdfName.Page });
 
-      dict.setMutationHandler(handler);
+      expect(dict.dirty).toBe(false);
       dict.delete("Type");
 
-      expect(handler).toHaveBeenCalledTimes(1);
+      expect(dict.dirty).toBe(true);
     });
 
-    it("does not call handler on delete() when key missing", () => {
-      const handler = vi.fn();
-
+    it("delete() does not mark dirty when key missing", () => {
       const dict = new PdfDict();
 
-      dict.setMutationHandler(handler);
       dict.delete("Missing");
 
-      expect(handler).not.toHaveBeenCalled();
+      expect(dict.dirty).toBe(false);
+    });
+
+    it("clearDirty() resets the flag", () => {
+      const dict = new PdfDict();
+
+      dict.set("Type", PdfName.Page);
+      expect(dict.dirty).toBe(true);
+
+      dict.clearDirty();
+      expect(dict.dirty).toBe(false);
     });
   });
 

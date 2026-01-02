@@ -53,7 +53,7 @@ describe("PDF", () => {
       const bytes = await loadFixture("basic", "rot0.pdf");
       const pdf = await PDF.load(bytes);
 
-      const pages = await pdf.getPages();
+      const pages = pdf.getPages();
 
       expect(pages.length).toBeGreaterThan(0);
     });
@@ -62,9 +62,27 @@ describe("PDF", () => {
       const bytes = await loadFixture("basic", "rot0.pdf");
       const pdf = await PDF.load(bytes);
 
-      const count = await pdf.getPageCount();
+      const count = pdf.getPageCount();
 
       expect(count).toBeGreaterThan(0);
+    });
+
+    it("getPage returns page at index", async () => {
+      const bytes = await loadFixture("basic", "rot0.pdf");
+      const pdf = await PDF.load(bytes);
+
+      const page = pdf.getPage(0);
+
+      expect(page).not.toBeNull();
+      expect(page?.objectNumber).toBeGreaterThan(0);
+    });
+
+    it("getPage returns null for out of bounds", async () => {
+      const bytes = await loadFixture("basic", "rot0.pdf");
+      const pdf = await PDF.load(bytes);
+
+      expect(pdf.getPage(-1)).toBeNull();
+      expect(pdf.getPage(1000)).toBeNull();
     });
   });
 
@@ -233,13 +251,13 @@ describe("PDF", () => {
       const pdf1 = await PDF.load(bytes);
 
       const catalog1 = await pdf1.getCatalog();
-      const pageCount1 = await pdf1.getPageCount();
+      const pageCount1 = pdf1.getPageCount();
 
       const saved = await pdf1.save();
       const pdf2 = await PDF.load(saved);
 
       const catalog2 = await pdf2.getCatalog();
-      const pageCount2 = await pdf2.getPageCount();
+      const pageCount2 = pdf2.getPageCount();
 
       expect(catalog2?.getName("Type")?.value).toBe(catalog1?.getName("Type")?.value);
       expect(pageCount2).toBe(pageCount1);

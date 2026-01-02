@@ -21,6 +21,7 @@ import {
 } from "#src/document/linearization";
 import { buildNameTree, NameTree } from "#src/document/name-tree";
 import { ObjectRegistry } from "#src/document/object-registry";
+import { PageTree } from "#src/document/page-tree";
 import { Scanner } from "#src/io/scanner";
 import { PdfArray } from "#src/objects/pdf-array";
 import { PdfDict } from "#src/objects/pdf-dict";
@@ -77,6 +78,8 @@ export class PDF {
   private readonly registry: ObjectRegistry;
   private readonly originalBytes: Uint8Array;
   private readonly originalXRefOffset: number;
+  /** Page tree, loaded eagerly during PDF.load() */
+  private readonly _pages: PageTree;
 
   /** Cached embedded files tree (undefined = not loaded, null = no tree) */
   private embeddedFilesTree: NameTree | null | undefined = undefined;
@@ -95,6 +98,7 @@ export class PDF {
     registry: ObjectRegistry,
     originalBytes: Uint8Array,
     originalXRefOffset: number,
+    pages: PageTree,
     options: {
       recoveredViaBruteForce: boolean;
       isLinearized: boolean;
@@ -104,6 +108,7 @@ export class PDF {
     this.registry = registry;
     this.originalBytes = originalBytes;
     this.originalXRefOffset = originalXRefOffset;
+    this._pages = pages;
     this.recoveredViaBruteForce = options.recoveredViaBruteForce;
     this.isLinearized = options.isLinearized;
     this.warnings = [...parsed.warnings];
@@ -152,8 +157,14 @@ export class PDF {
     } catch {
       originalXRefOffset = 0;
     }
+    // Load page tree eagerly
+    const catalog = await parsed.getCatalog();
+    const pagesRef = catalog?.getRef("Pages");
+    const pages = pagesRef
+      ? await PageTree.load(pagesRef, parsed.getObject.bind(parsed))
+      : PageTree.empty();
 
-    return new PDF(parsed, registry, bytes, originalXRefOffset, {
+    return new PDF(parsed, registry, bytes, originalXRefOffset, pages, {
       recoveredViaBruteForce: parsed.recoveredViaBruteForce,
       isLinearized,
     });
@@ -222,17 +233,25 @@ export class PDF {
   }
 
   /**
-   * Get all page references.
+   * Get all page references in document order.
    */
-  async getPages(): Promise<PdfRef[]> {
-    return this.parsed.getPages();
+  getPages(): PdfRef[] {
+    return this._pages.getPages();
   }
 
   /**
    * Get page count.
    */
-  async getPageCount(): Promise<number> {
-    return this.parsed.getPageCount();
+  getPageCount(): number {
+    return this._pages.getPageCount();
+  }
+
+  /**
+   * Get a single page by index (0-based).
+   * Returns null if index out of bounds.
+   */
+  getPage(index: number): PdfRef | null {
+    return this._pages.getPage(index);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

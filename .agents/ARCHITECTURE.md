@@ -7,7 +7,10 @@ This document outlines the architecture of @libpdf/core. It's a living document 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      High-Level API                             │
-│        (PDF, PDFPage, PDFForm, PDFAttachments, PDFSignature)    │
+│   (PDF, PDFPage, PDFForm, PDFAttachments, PDFSignature, PDFImage)│
+├─────────────────────────────────────────────────────────────────┤
+│                      Drawing Layer                              │
+│    (DrawingContext, PathBuilder, TextLayout, ColorHelpers)      │
 ├─────────────────────────────────────────────────────────────────┤
 │                     Document Layer                              │
 │    (ObjectRegistry, ObjectCopier, AcroForm, ChangeCollector)    │
@@ -15,11 +18,17 @@ This document outlines the architecture of @libpdf/core. It's a living document 
 │                     Signatures Layer                            │
 │  (Signers, CMS Formats, Timestamp, Revocation, DSS, Placeholder)│
 ├─────────────────────────────────────────────────────────────────┤
+│                       Images Layer                              │
+│            (JPEG embedding, PNG embedding, PDFImage)            │
+├─────────────────────────────────────────────────────────────────┤
 │                       Fonts Layer                               │
 │    (FontFactory, FontEmbedder, SimpleFont, CompositeFont)       │
 ├─────────────────────────────────────────────────────────────────┤
 │                      Fontbox Layer                              │
 │         (TTF/CFF/Type1 parsing, subsetting, encoding)           │
+├─────────────────────────────────────────────────────────────────┤
+│                       Layers (OCG)                              │
+│            (Layer detection, flattening)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                     DocumentParser                              │
 │           Top-level orchestration and document access           │
@@ -183,6 +192,61 @@ embedded.ref;     // PdfRef to the XObject
 embedded.width;   // Original page width
 embedded.height;  // Original page height
 embedded.box;     // Bounding box
+```
+
+---
+
+## Drawing Layer (`src/api/drawing/`)
+
+Content drawing API for adding visual elements to pages.
+
+### PDFPage Drawing Methods
+
+```typescript
+// Shapes
+page.drawRectangle({ x, y, width, height, color, borderColor, borderWidth, opacity, rotate });
+page.drawLine({ start: { x, y }, end: { x, y }, color, thickness, dashArray, opacity });
+page.drawCircle({ x, y, radius, color, borderColor, borderWidth, opacity });
+page.drawEllipse({ x, y, xScale, yScale, color, borderColor, borderWidth, opacity });
+
+// Text
+page.drawText("Hello World", { x, y, font, fontSize, color, opacity, rotate });
+page.drawText(longText, { x, y, font, fontSize, maxWidth, lineHeight, align });
+
+// Images
+const image = await pdf.embedImage(bytes);
+page.drawImage(image, { x, y, width, height, opacity, rotate });
+
+// Embedded pages (for overlays, watermarks)
+const embedded = await pdf.embedPage(sourcePdf, 0);
+page.drawPage(embedded, { x, y, scale, opacity, background });
+
+// Custom paths
+page.drawPath()
+  .moveTo(100, 100)
+  .lineTo(200, 150)
+  .curveTo(250, 200, 300, 150, 350, 100)
+  .close()
+  .fill({ color: rgb(1, 0, 0) });
+```
+
+### Text Features
+
+| Feature | Description |
+|---------|-------------|
+| `maxWidth` | Automatic word wrapping at specified width |
+| `lineHeight` | Line spacing multiplier |
+| `align` | Text alignment: "left", "center", "right", "justify" |
+| `rotate` | Rotation in degrees around origin |
+
+### Color Helpers
+
+```typescript
+import { rgb, cmyk, grayscale } from "@libpdf/core";
+
+rgb(1, 0, 0)           // Red in RGB
+cmyk(0, 1, 1, 0)       // Red in CMYK
+grayscale(0.5)         // 50% gray
 ```
 
 ---
@@ -617,6 +681,57 @@ Content stream parsing and operators.
 
 ---
 
+## Images Layer (`src/images/`)
+
+Image embedding for JPEG and PNG formats.
+
+### PDFImage Class
+
+Represents an embedded image that can be drawn on pages.
+
+```typescript
+const image = await pdf.embedImage(bytes);   // Auto-detect format
+const image = await pdf.embedJpeg(bytes);    // Force JPEG
+const image = await pdf.embedPng(bytes);     // Force PNG
+
+image.ref;      // PdfRef to the XObject
+image.width;    // Original image width
+image.height;   // Original image height
+```
+
+### JPEG Handling
+
+- Parses JPEG header for dimensions and color space
+- Direct DCTDecode embedding (no re-encoding)
+- Supports RGB, CMYK, and grayscale
+
+### PNG Handling
+
+- Full PNG parsing with deflate decompression
+- Alpha channel embedded as separate SMask
+- Supports RGB and grayscale with optional alpha
+
+---
+
+## Layers (OCG) Layer (`src/layers/`)
+
+Optional Content Groups (layers) detection and flattening.
+
+```typescript
+// Check for layers
+if (pdf.hasLayers()) {
+  const layers = await pdf.getLayers();
+  // Returns: [{ name, visible, locked, intent }, ...]
+  
+  // Flatten to make all content visible and remove OCG
+  await pdf.flattenLayers();
+}
+```
+
+**Use case**: Required before signing to prevent hidden content attacks.
+
+---
+
 ## Attachments Layer (`src/attachments/`)
 
 Embedded file specification handling.
@@ -762,8 +877,9 @@ When implementing, consult the reference libraries in `checkouts/`:
 - [x] DocumentParser with lazy loading and recovery
 - [x] Encryption/decryption (R2-R6, RC4, AES-128, AES-256)
 - [x] Writer (complete rewrite and incremental update)
-- [x] High-level API (PDF, PDFPage, PDFForm)
+- [x] High-level API (PDF, PDFPage, PDFForm, PDFImage)
 - [x] Form filling, reading, and flattening
+- [x] Form field creation (text, checkbox, radio, dropdown, listbox, signature)
 - [x] Font parsing (SimpleFont, CompositeFont, CIDFont)
 - [x] Font embedding with subsetting (TTF, OpenType/CFF)
 - [x] Fontbox (TTF, CFF, Type1, AFM parsing)
@@ -776,16 +892,17 @@ When implementing, consult the reference libraries in `checkouts/`:
 - [x] Signature signers (P12/PKCS#12, CryptoKey)
 - [x] Timestamp authority support (RFC 3161)
 - [x] Long-term validation (DSS, OCSP, CRL)
+- [x] Image embedding (JPEG, PNG with alpha)
+- [x] Drawing API (drawText, drawImage, drawRectangle, drawLine, drawCircle, drawEllipse, drawPath)
+- [x] Text layout (word wrapping, alignment, multiline)
+- [x] Layer (OCG) detection and flattening
 
 ### Partial / In Progress
 - [ ] Linearized PDF fast-open (detection only, no optimization)
-- [ ] Text extraction (fonts decode, but no layout)
-- [ ] Drawing API (only `drawPage` implemented)
+- [ ] Text extraction (fonts decode, but no layout analysis)
 
 ### Not Yet Built
-- [ ] Full drawing API (drawText, drawImage, drawRect, etc.)
-- [ ] Image embedding
-- [ ] Annotation support (read/write)
+- [ ] Annotation support (read/write/flatten)
 - [ ] Digital signature verification
 - [ ] Certificate-based decryption (/Adobe.PubSec handler)
 - [ ] Outline/bookmark support

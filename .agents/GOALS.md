@@ -18,9 +18,9 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 
 ### 3. Modification
 - [x] **Add/remove pages** — Insert, delete, reorder pages
-- [ ] **Add/remove content** — Draw text, images, graphics on pages
+- [x] **Add/remove content** — Draw text, images, graphics on pages
 - [ ] **Add/remove annotations** — Comments, highlights, stamps, etc.
-- [ ] **Add/remove form fields** — Text fields, checkboxes, dropdowns, etc.
+- [x] **Add/remove form fields** — Text fields, checkboxes, dropdowns, etc.
 - [x] **Incremental updates** — Append changes without rewriting (critical for signatures)
 
 ### 4. Forms
@@ -32,7 +32,7 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 ### 5. Flattening
 - [x] **Flatten forms** — Bake form field appearances into page content
 - [ ] **Flatten annotations** — Bake annotation appearances into page content
-- [ ] **Flatten layers** — Merge optional content groups (required before signing to prevent hidden content attacks)
+- [x] **Flatten layers** — Merge optional content groups (required before signing to prevent hidden content attacks)
 
 ### 6. Attachments
 - [x] **Extract attachments** — Get embedded files from PDF
@@ -53,10 +53,10 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 ### 9. Creation
 - [x] **Create from scratch** — Build PDFs programmatically
 - [x] **Add pages** — Create blank or content-filled pages
-- [ ] **Draw content** — Text, images, paths, shapes
+- [x] **Draw content** — Text, images, paths, shapes
 - [x] **Embed fonts** — Subset and embed TrueType/OpenType fonts
 - [ ] **Add annotations** — Links, comments, stamps
-- [ ] **Add form fields** — Interactive forms
+- [x] **Add form fields** — Interactive forms
 
 ---
 
@@ -64,9 +64,9 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 
 ### Tier 1: Foundation
 These enable most other features:
-1. **Encryption/Decryption** — Many real-world PDFs are encrypted
-2. **Incremental Updates** — Required for signature preservation
-3. **Object Modification** — Infrastructure for all write operations
+1. **Encryption/Decryption** — Many real-world PDFs are encrypted ✓
+2. **Incremental Updates** — Required for signature preservation ✓
+3. **Object Modification** — Infrastructure for all write operations ✓
 
 ### Tier 2: High Value
 Most commonly requested features:
@@ -78,7 +78,7 @@ Most commonly requested features:
 
 ### Tier 3: Complete Solution
 Full-featured library:
-1. **Flattening** — Print-ready documents
+1. **Flattening** — Print-ready documents ✓ (forms and layers done, annotations pending)
 2. **Annotation Modification** — Review workflows
 3. **Text Extraction** — Search, indexing, accessibility
 

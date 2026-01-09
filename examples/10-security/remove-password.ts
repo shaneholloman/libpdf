@@ -1,26 +1,26 @@
 /**
- * Example: Decrypt PDF and Save Unencrypted
+ * Example: Remove Password Protection
  *
- * This example demonstrates loading an encrypted PDF with a password
- * and saving it without encryption using removeProtection().
+ * This example demonstrates how to remove password protection from
+ * an encrypted PDF using the removeProtection() method.
  *
- * Run: npx tsx examples/10-security/decrypt-pdf.ts
+ * Run: npx tsx examples/10-security/remove-password.ts
  */
 
 import { PDF } from "../../src/index";
 import { formatBytes, loadFixture, saveOutput } from "../utils";
 
 async function main() {
-  console.log("Decrypting PDF and saving unencrypted copy...\n");
+  console.log("Removing password protection from PDF...\n");
 
   // Load an encrypted PDF fixture
-  // PasswordSample-128bit.pdf uses: owner="owner", user="user"
-  const bytes = await loadFixture("encryption", "PasswordSample-128bit.pdf");
+  // PasswordSample-256bit.pdf uses: owner="owner", user="user"
+  const bytes = await loadFixture("encryption", "PasswordSample-256bit.pdf");
 
   console.log("=== Loading Encrypted PDF ===\n");
   console.log(`Original size: ${formatBytes(bytes.length)}`);
 
-  // Load with the owner password (required for full access)
+  // Load with the owner password (required to remove protection)
   const pdf = await PDF.load(bytes, {
     credentials: "owner",
   });
@@ -36,31 +36,29 @@ async function main() {
   console.log(`  Algorithm: ${security.algorithm}`);
   console.log(`  Key length: ${security.keyLength} bits`);
 
-  // Remove protection using the API
+  // Remove protection
   console.log("\n=== Removing Protection ===\n");
   pdf.removeProtection();
   console.log("Called removeProtection()");
 
-  // Save the decrypted PDF
-  const decryptedBytes = await pdf.save();
-  const outputPath = await saveOutput("10-security/decrypted.pdf", decryptedBytes);
+  // Save the unprotected PDF
+  const unprotectedBytes = await pdf.save();
+  const outputPath = await saveOutput("10-security/unprotected.pdf", unprotectedBytes);
 
-  console.log("\n=== Saved Decrypted PDF ===\n");
+  console.log("\n=== Saved Unprotected PDF ===\n");
   console.log(`Output: ${outputPath}`);
-  console.log(`Original size: ${formatBytes(bytes.length)}`);
-  console.log(`Decrypted size: ${formatBytes(decryptedBytes.length)}`);
+  console.log(`Size: ${formatBytes(unprotectedBytes.length)}`);
 
   // Verify the saved PDF is not encrypted
   console.log("\n=== Verification ===\n");
-  const verifyPdf = await PDF.load(decryptedBytes);
+  const verifyPdf = await PDF.load(unprotectedBytes);
   console.log(`Encrypted: ${verifyPdf.isEncrypted}`);
   console.log(`Page count: ${verifyPdf.getPageCount()}`);
 
   console.log("\n=== Notes ===");
   console.log("1. Owner password is required to remove protection");
-  console.log("2. Use pdf.removeProtection() to mark for decryption");
-  console.log("3. The decrypted PDF can be opened without any password");
-  console.log("4. Incremental save is not supported when removing protection");
+  console.log("2. User password alone cannot remove protection (insufficient permissions)");
+  console.log("3. The saved PDF can be opened without any password");
 }
 
 main().catch(console.error);

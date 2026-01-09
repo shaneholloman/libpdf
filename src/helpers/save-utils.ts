@@ -8,6 +8,7 @@
  * Reasons why incremental save is not possible.
  */
 export type IncrementalSaveBlocker =
+  | "newly-created"
   | "linearized"
   | "brute-force-recovery"
   | "encryption-changed"
@@ -20,12 +21,18 @@ export type IncrementalSaveBlocker =
  * Returns null if incremental save is possible, or a blocker reason if not.
  */
 export function checkIncrementalSaveBlocker(context: {
+  isNewlyCreated: boolean;
   isLinearized: boolean;
   recoveredViaBruteForce: boolean;
   encryptionChanged: boolean;
   encryptionAdded: boolean;
   encryptionRemoved: boolean;
 }): IncrementalSaveBlocker | null {
+  // Newly created documents have no original bytes to append to
+  if (context.isNewlyCreated) {
+    return "newly-created";
+  }
+
   if (context.isLinearized) {
     return "linearized";
   }

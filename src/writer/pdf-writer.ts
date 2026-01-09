@@ -12,10 +12,14 @@ import type { ObjectRegistry } from "#src/document/object-registry";
 import { FilterPipeline } from "#src/filters/filter-pipeline";
 import { CR, LF } from "#src/helpers/chars";
 import { ByteWriter } from "#src/io/byte-writer";
+import { PdfArray } from "#src/objects/pdf-array";
+import { PdfDict } from "#src/objects/pdf-dict";
 import { PdfName } from "#src/objects/pdf-name";
 import type { PdfObject } from "#src/objects/pdf-object";
 import type { PdfRef } from "#src/objects/pdf-ref";
 import { PdfStream } from "#src/objects/pdf-stream";
+import { PdfString } from "#src/objects/pdf-string";
+import type { StandardSecurityHandler } from "#src/security/standard-handler";
 import { writeXRefStream, writeXRefTable, type XRefWriteEntry } from "./xref-writer";
 
 /**
@@ -48,6 +52,14 @@ export interface WriteOptions {
    * formats like DCTDecode/JPXDecode) are left unchanged.
    */
   compressStreams?: boolean;
+
+  /**
+   * Security handler for encrypting content.
+   *
+   * When provided, strings and streams will be encrypted before writing.
+   * The encrypt dictionary reference must also be provided.
+   */
+  securityHandler?: StandardSecurityHandler;
 }
 
 /**
@@ -131,6 +143,104 @@ async function prepareObjectForWrite(obj: PdfObject, compress: boolean): Promise
 }
 
 /**
+ * Encryption context for writing.
+ */
+interface EncryptionContext {
+  handler: StandardSecurityHandler;
+  objectNumber: number;
+  generation: number;
+}
+
+/**
+ * Recursively encrypt an object for writing.
+ *
+ * Creates a new object tree with all strings and stream data encrypted.
+ * References, names, numbers, and booleans are returned unchanged.
+ *
+ * @param obj - The object to encrypt
+ * @param ctx - Encryption context with handler and object reference
+ * @returns Encrypted copy of the object
+ */
+function encryptObject(obj: PdfObject, ctx: EncryptionContext): PdfObject {
+  if (obj instanceof PdfString) {
+    // Encrypt string bytes
+    const encrypted = ctx.handler.encryptString(obj.bytes, ctx.objectNumber, ctx.generation);
+    // Always use hex format for encrypted strings (cleaner, no escaping issues)
+    return new PdfString(encrypted, "hex");
+  }
+
+  if (obj instanceof PdfStream) {
+    // Check if this stream type should be encrypted
+    const streamType = obj.getName("Type")?.value;
+
+    if (!ctx.handler.shouldEncryptStream(streamType)) {
+      // Recursively encrypt dictionary entries but not stream data
+      return encryptStreamDict(obj, ctx);
+    }
+
+    // Encrypt stream data
+    const encryptedData = ctx.handler.encryptStream(obj.data, ctx.objectNumber, ctx.generation);
+
+    // Create new stream with encrypted data and encrypted dict entries
+    const encryptedStream = new PdfStream([], encryptedData);
+
+    // Copy and encrypt dictionary entries
+    for (const [key, value] of obj) {
+      if (key.value === "Length") {
+        continue; // Skip Length, will be recalculated
+      }
+
+      encryptedStream.set(key.value, encryptObject(value, ctx));
+    }
+
+    return encryptedStream;
+  }
+
+  if (obj instanceof PdfDict) {
+    // Recursively encrypt dictionary values
+    const encrypted = new PdfDict();
+
+    for (const [key, value] of obj) {
+      encrypted.set(key.value, encryptObject(value, ctx));
+    }
+
+    return encrypted;
+  }
+
+  if (obj instanceof PdfArray) {
+    // Recursively encrypt array elements
+    const encrypted = new PdfArray();
+
+    for (const item of obj) {
+      encrypted.push(encryptObject(item, ctx));
+    }
+
+    return encrypted;
+  }
+
+  // Other types (PdfRef, PdfName, PdfNumber, PdfBool, PdfNull) pass through unchanged
+  return obj;
+}
+
+/**
+ * Encrypt dictionary entries of a stream without encrypting stream data.
+ * Used for streams that should not be encrypted (XRef, unencrypted metadata).
+ */
+function encryptStreamDict(stream: PdfStream, ctx: EncryptionContext): PdfStream {
+  const encrypted = new PdfStream([], stream.data);
+
+  for (const [key, value] of stream) {
+    if (key.value === "Length") {
+      continue;
+    }
+
+    encrypted.set(key.value, encryptObject(value, ctx));
+  }
+
+  return encrypted;
+}
+
+/**
  * Write a complete PDF from scratch.
  *
  * Structure:
@@ -179,7 +289,17 @@ export async function writeComplete(
   // Write objects and record offsets
   for (const [ref, obj] of allObjects) {
     // Prepare object (compress streams if needed)
-    const prepared = await prepareObjectForWrite(obj, compress);
+    let prepared = await prepareObjectForWrite(obj, compress);
+
+    // Apply encryption if security handler is provided
+    // Skip encrypting the /Encrypt dictionary itself
+    if (options.securityHandler && options.encrypt && ref !== options.encrypt) {
+      prepared = encryptObject(prepared, {
+        handler: options.securityHandler,
+        objectNumber: ref.objectNumber,
+        generation: ref.generation,
+      });
+    }
 
     offsets.set(ref.objectNumber, {
       offset: writer.position,
@@ -296,7 +416,17 @@ export async function writeIncremental(
 
   // Write modified objects
   for (const [ref, obj] of changes.modified) {
-    const prepared = await prepareObjectForWrite(obj, compress);
+    let prepared = await prepareObjectForWrite(obj, compress);
+
+    // Apply encryption if security handler is provided
+    // Skip encrypting the /Encrypt dictionary itself
+    if (options.securityHandler && options.encrypt && ref !== options.encrypt) {
+      prepared = encryptObject(prepared, {
+        handler: options.securityHandler,
+        objectNumber: ref.objectNumber,
+        generation: ref.generation,
+      });
+    }
 
     offsets.set(ref.objectNumber, {
       offset: writer.position,
@@ -308,7 +438,17 @@ export async function writeIncremental(
 
   // Write new objects
   for (const [ref, obj] of changes.created) {
-    const prepared = await prepareObjectForWrite(obj, compress);
+    let prepared = await prepareObjectForWrite(obj, compress);
+
+    // Apply encryption if security handler is provided
+    // Skip encrypting the /Encrypt dictionary itself
+    if (options.securityHandler && options.encrypt && ref !== options.encrypt) {
+      prepared = encryptObject(prepared, {
+        handler: options.securityHandler,
+        objectNumber: ref.objectNumber,
+        generation: ref.generation,
+      });
+    }
 
     offsets.set(ref.objectNumber, {
       offset: writer.position,

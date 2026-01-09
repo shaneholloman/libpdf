@@ -75,3 +75,30 @@ export class UnsupportedEncryptionError extends SecurityError {
     this.code = code;
   }
 }
+
+/**
+ * Security error codes for permission and protection operations.
+ */
+export type SecurityErrorCode =
+  | "PERMISSION_DENIED"
+  | "NOT_AUTHENTICATED"
+  | "INVALID_PASSWORD"
+  | "UNSUPPORTED_ENCRYPTION";
+
+/**
+ * Error thrown when an operation requires permissions the user doesn't have.
+ *
+ * Examples:
+ * - Calling removeProtection() without owner access or modify permission
+ * - Calling setProtection() on an encrypted document without owner access
+ */
+export class PermissionDeniedError extends SecurityError {
+  readonly code: SecurityErrorCode = "PERMISSION_DENIED";
+  readonly requiredPermission?: string;
+
+  constructor(message: string, requiredPermission?: string) {
+    super(message);
+    this.name = "PermissionDeniedError";
+    this.requiredPermission = requiredPermission;
+  }
+}

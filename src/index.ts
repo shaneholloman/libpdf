@@ -84,6 +84,20 @@ export { type Degrees, degrees } from "./helpers/rotations";
 export type { FlattenLayersResult, LayerInfo } from "./layers/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Security
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type {
+  AuthenticationResult,
+  EncryptionAlgorithmOption,
+  PermissionOptions,
+  Permissions,
+  ProtectionOptions,
+  SecurityInfo,
+} from "./api/pdf-security";
+export { PermissionDeniedError, SecurityError } from "./security/errors";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Digital Signatures
 // ─────────────────────────────────────────────────────────────────────────────
 

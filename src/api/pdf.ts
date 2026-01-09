@@ -32,6 +32,9 @@ import { PdfStream } from "#src/objects/pdf-stream";
 import { PdfString } from "#src/objects/pdf-string";
 import { DocumentParser, type ParseOptions } from "#src/parser/document-parser";
 import { XRefParser } from "#src/parser/xref-parser";
+import { generateEncryption, reconstructEncryptDict } from "#src/security/encryption-generator";
+import { PermissionDeniedError } from "#src/security/errors";
+import { DEFAULT_PERMISSIONS, type Permissions } from "#src/security/permissions";
 import type { SignOptions, SignResult } from "#src/signatures/types";
 import { writeComplete, writeIncremental } from "#src/writer/pdf-writer";
 import { PDFAttachments } from "./pdf-attachments";
@@ -42,6 +45,13 @@ import { PDFFonts } from "./pdf-fonts";
 import { PDFForm } from "./pdf-form";
 import { PDFPage } from "./pdf-page";
 import { PDFPageTree } from "./pdf-page-tree";
+import type {
+  AuthenticationResult,
+  EncryptionAlgorithmOption,
+  PendingSecurityState,
+  ProtectionOptions,
+  SecurityInfo,
+} from "./pdf-security";
 import { PDFSignature } from "./pdf-signature";
 
 /**
@@ -215,6 +225,18 @@ export class PDF {
   /** Whether the original document uses XRef streams (PDF 1.5+) */
   readonly usesXRefStreams: boolean;
 
+  /**
+   * Whether this document was newly created (not loaded from bytes).
+   * Newly created documents cannot use incremental save.
+   */
+  private _isNewlyCreated!: boolean;
+
+  /**
+   * Pending security state for save.
+   * Tracks whether encryption should be added, removed, or unchanged.
+   */
+  private _pendingSecurity: PendingSecurityState = { action: "none" };
+
   /** Warnings from parsing and operations */
   get warnings(): string[] {
     return this.ctx.warnings;
@@ -234,6 +256,7 @@ export class PDF {
     originalBytes: Uint8Array,
     originalXRefOffset: number,
     options: {
+      isNewlyCreated: boolean;
       recoveredViaBruteForce: boolean;
       isLinearized: boolean;
       usesXRefStreams: boolean;
@@ -242,6 +265,7 @@ export class PDF {
     this.ctx = ctx;
     this.originalBytes = originalBytes;
     this.originalXRefOffset = originalXRefOffset;
+    this._isNewlyCreated = options.isNewlyCreated;
     this.recoveredViaBruteForce = options.recoveredViaBruteForce;
     this.isLinearized = options.isLinearized;
     this.usesXRefStreams = options.usesXRefStreams;
@@ -338,6 +362,7 @@ export class PDF {
     // Extract document info from parsed document
     const info: DocumentInfo = {
       version: parsed.version,
+      securityHandler: parsed.securityHandler,
       isEncrypted: parsed.isEncrypted,
       isAuthenticated: parsed.isAuthenticated,
       trailer: parsed.trailer,
@@ -346,6 +371,7 @@ export class PDF {
     const ctx = new PDFContext(registry, pdfCatalog, pages, info);
 
     return new PDF(ctx, bytes, originalXRefOffset, {
+      isNewlyCreated: false,
       recoveredViaBruteForce: parsed.recoveredViaBruteForce,
       isLinearized,
       usesXRefStreams,
@@ -402,6 +428,7 @@ export class PDF {
 
     const info: DocumentInfo = {
       version: parsed.version,
+      securityHandler: parsed.securityHandler,
       isEncrypted: parsed.isEncrypted,
       isAuthenticated: parsed.isAuthenticated,
       trailer: parsed.trailer,
@@ -411,6 +438,11 @@ export class PDF {
     this.ctx = new PDFContext(registry, pdfCatalog, pages, info);
     this.originalBytes = bytes;
     this.originalXRefOffset = xrefOffset;
+
+    // Reset flags - after reload, document is no longer "newly created"
+    // and any pending security changes have been applied
+    this._isNewlyCreated = false;
+    this._pendingSecurity = { action: "none" };
 
     // Clear cached form so it gets reloaded
     this._form = undefined;
@@ -465,6 +497,7 @@ export class PDF {
     // Create document info for a new document
     const info: DocumentInfo = {
       version: "1.7",
+      securityHandler: null,
       isEncrypted: false,
       isAuthenticated: true,
       trailer,
@@ -473,6 +506,7 @@ export class PDF {
     const ctx = new PDFContext(registry, pdfCatalog, pages, info);
 
     const pdf = new PDF(ctx, new Uint8Array(0), 0, {
+      isNewlyCreated: true,
       recoveredViaBruteForce: false,
       isLinearized: false,
       usesXRefStreams: false,
@@ -549,6 +583,237 @@ export class PDF {
   /** Whether authentication succeeded (for encrypted docs) */
   get isAuthenticated(): boolean {
     return this.ctx.info.isAuthenticated;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Security
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get detailed security information about the document.
+   *
+   * @returns Security information including encryption details and permissions
+   *
+   * @example
+   * ```typescript
+   * const security = pdf.getSecurity();
+   * console.log(`Algorithm: ${security.algorithm}`);
+   * console.log(`Can copy: ${security.permissions.copy}`);
+   * ```
+   */
+  getSecurity(): SecurityInfo {
+    const handler = this.ctx.info.securityHandler;
+
+    if (!this.isEncrypted || !handler) {
+      return {
+        isEncrypted: false,
+        permissions: DEFAULT_PERMISSIONS,
+      };
+    }
+
+    const encryption = handler.encryption;
+
+    // Map internal algorithm to public API type
+    let algorithm: EncryptionAlgorithmOption | undefined;
+
+    if (encryption.algorithm === "RC4") {
+      algorithm = encryption.keyLengthBits <= 40 ? "RC4-40" : "RC4-128";
+    } else if (encryption.algorithm === "AES-128") {
+      algorithm = "AES-128";
+    } else if (encryption.algorithm === "AES-256") {
+      algorithm = "AES-256";
+    }
+
+    // Determine how the document was authenticated
+    let authenticatedAs: "user" | "owner" | null = null;
+
+    if (handler.isAuthenticated) {
+      authenticatedAs = handler.hasOwnerAccess ? "owner" : "user";
+    }
+
+    // For owner access, all permissions are granted regardless of flags
+    const permissions = handler.hasOwnerAccess ? DEFAULT_PERMISSIONS : handler.permissions;
+
+    return {
+      isEncrypted: true,
+      algorithm,
+      keyLength: encryption.keyLengthBits,
+      revision: encryption.revision,
+      hasUserPassword: true, // We can't easily detect empty user password after the fact
+      hasOwnerPassword: true,
+      authenticatedAs,
+      permissions,
+      encryptMetadata: encryption.encryptMetadata,
+    };
+  }
+
+  /**
+   * Get the current permission flags.
+   *
+   * Returns all permissions as true for unencrypted documents.
+   * For encrypted documents authenticated with owner password, all are true.
+   *
+   * @returns Current permission flags
+   *
+   * @example
+   * ```typescript
+   * const perms = pdf.getPermissions();
+   * if (!perms.copy) {
+   *   console.log("Copy/paste is restricted");
+   * }
+   * ```
+   */
+  getPermissions(): Permissions {
+    const handler = this.ctx.info.securityHandler;
+
+    if (!this.isEncrypted || !handler) {
+      return DEFAULT_PERMISSIONS;
+    }
+
+    // Owner access grants all permissions
+    if (handler.hasOwnerAccess) {
+      return DEFAULT_PERMISSIONS;
+    }
+
+    return handler.permissions;
+  }
+
+  /**
+   * Check if the document was authenticated with owner-level access.
+   *
+   * Owner access grants all permissions regardless of permission flags.
+   * Returns true for unencrypted documents.
+   *
+   * @returns true if owner access is available
+   */
+  hasOwnerAccess(): boolean {
+    if (!this.isEncrypted) {
+      return true;
+    }
+
+    const handler = this.ctx.info.securityHandler;
+
+    return handler?.hasOwnerAccess ?? false;
+  }
+
+  /**
+   * Attempt to authenticate with a password.
+   *
+   * Use this to upgrade access (e.g., from user to owner) or to
+   * try a different password without reloading the document.
+   *
+   * @param password - Password to try
+   * @returns Authentication result
+   *
+   * @example
+   * ```typescript
+   * // Try to get owner access
+   * const result = pdf.authenticate("ownerPassword");
+   * if (result.isOwner) {
+   *   pdf.removeProtection();
+   * }
+   * ```
+   */
+  authenticate(password: string): AuthenticationResult {
+    const handler = this.ctx.info.securityHandler;
+
+    if (!this.isEncrypted || !handler) {
+      return {
+        authenticated: true,
+        isOwner: true,
+        permissions: DEFAULT_PERMISSIONS,
+      };
+    }
+
+    const result = handler.authenticateWithString(password);
+
+    // For owner access, all permissions are granted
+    const permissions = result.isOwner ? DEFAULT_PERMISSIONS : result.permissions;
+
+    return {
+      authenticated: result.authenticated,
+      passwordType: result.passwordType,
+      isOwner: result.isOwner,
+      permissions,
+    };
+  }
+
+  /**
+   * Remove all encryption from the document.
+   *
+   * After calling this, the document will be saved without encryption.
+   * Requires owner access, or user access with modify permission.
+   *
+   * @throws {PermissionDeniedError} If insufficient permissions to remove protection
+   *
+   * @example
+   * ```typescript
+   * // Remove encryption from a document
+   * const pdf = await PDF.load(bytes, { credentials: "ownerPassword" });
+   * pdf.removeProtection();
+   * const unprotectedBytes = await pdf.save();
+   * ```
+   */
+  removeProtection(): void {
+    // For unencrypted documents, this is a no-op
+    if (!this.isEncrypted) {
+      return;
+    }
+
+    const handler = this.ctx.info.securityHandler;
+
+    if (!handler) {
+      return;
+    }
+
+    // Check permissions
+    if (!handler.hasOwnerAccess && !handler.permissions.modify) {
+      throw new PermissionDeniedError(
+        "Cannot remove protection: requires owner access or modify permission",
+        "modify",
+      );
+    }
+
+    // Mark that encryption should be removed on save
+    this._pendingSecurity = { action: "remove" };
+  }
+
+  /**
+   * Add or change document encryption.
+   *
+   * If the document is already encrypted, requires owner access to change.
+   * If unencrypted, can be called without restrictions.
+   *
+   * @param options - Protection options (passwords, permissions, algorithm)
+   * @throws {PermissionDeniedError} If insufficient permissions to change protection
+   *
+   * @example
+   * ```typescript
+   * // Add protection to unencrypted document
+   * pdf.setProtection({
+   *   userPassword: "secret",
+   *   ownerPassword: "admin",
+   *   permissions: { copy: false, print: true },
+   * });
+   *
+   * // Change to stronger algorithm
+   * pdf.setProtection({
+   *   algorithm: "AES-256",
+   * });
+   * ```
+   */
+  setProtection(options: ProtectionOptions): void {
+    // If encrypted, need owner access to change
+    if (this.isEncrypted) {
+      const handler = this.ctx.info.securityHandler;
+
+      if (handler && !handler.hasOwnerAccess) {
+        throw new PermissionDeniedError("Cannot change protection: requires owner access");
+      }
+    }
+
+    // Mark that encryption should be applied on save
+    this._pendingSecurity = { action: "encrypt", options };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2156,12 +2421,15 @@ export class PDF {
    * Returns null if possible, or the blocker reason if not.
    */
   canSaveIncrementally(): IncrementalSaveBlocker | null {
+    const pendingAction = this._pendingSecurity.action;
+
     return checkIncrementalSaveBlocker({
+      isNewlyCreated: this._isNewlyCreated,
       isLinearized: this.isLinearized,
       recoveredViaBruteForce: this.recoveredViaBruteForce,
-      encryptionChanged: false, // TODO: track encryption changes
-      encryptionAdded: false,
-      encryptionRemoved: false,
+      encryptionChanged: pendingAction !== "none",
+      encryptionAdded: pendingAction === "encrypt" && !this.isEncrypted,
+      encryptionRemoved: pendingAction === "remove",
     });
   }
 
@@ -2205,9 +2473,10 @@ export class PDF {
 
     const useIncremental = wantsIncremental && blocker === null;
 
-    // If no changes, return original bytes
+    // If no changes and no security changes, return original bytes
+    const hasSecurityChanges = this._pendingSecurity.action !== "none";
 
-    if (!this.hasChanges() && !this.fonts.hasEmbeddedFonts) {
+    if (!this.hasChanges() && !this.fonts.hasEmbeddedFonts && !hasSecurityChanges) {
       return {
         bytes: this.originalBytes,
         xrefOffset: this.originalXRefOffset,
@@ -2224,19 +2493,71 @@ export class PDF {
     // Get optional info reference
     const infoRef = this.ctx.info.trailer.getRef("Info");
 
-    // TODO: Handle encryption, ID arrays properly
+    // Handle encryption based on pending security state
+    let encryptRef: PdfRef | undefined;
+    let fileId: [Uint8Array, Uint8Array] | undefined;
+    let securityHandler:
+      | import("#src/security/standard-handler").StandardSecurityHandler
+      | undefined;
+
+    if (this._pendingSecurity.action === "encrypt" && this._pendingSecurity.options) {
+      // Generate new encryption
+      const encryption = generateEncryption(this._pendingSecurity.options);
+
+      // Register the encrypt dictionary
+      encryptRef = this.ctx.registry.register(encryption.encryptDict);
+      fileId = encryption.fileId;
+      securityHandler = encryption.securityHandler;
+    } else if (this._pendingSecurity.action === "none" && this.isEncrypted) {
+      // Re-encrypt with original security - preserve encryption when saving encrypted documents
+      const handler = this.ctx.info.securityHandler;
+
+      if (handler) {
+        // Reconstruct the encrypt dict from the parsed encryption parameters
+        // We can't resolve the original encrypt ref because it would try to decrypt it
+        // (the encrypt dict is never encrypted in the PDF)
+        const reconstructedDict = reconstructEncryptDict(handler.encryption);
+
+        // Register the reconstructed dict to get a reference
+        encryptRef = this.ctx.registry.register(reconstructedDict);
+
+        // Get file ID from trailer
+        const idArray = this.ctx.info.trailer.getArray("ID");
+
+        if (idArray && idArray.length >= 2) {
+          const id1 = idArray.at(0);
+          const id2 = idArray.at(1);
+
+          if (id1 instanceof PdfString && id2 instanceof PdfString) {
+            fileId = [id1.bytes, id2.bytes];
+          }
+        }
+
+        securityHandler = handler;
+      }
+    }
+    // Note: action === "remove" means no encrypt dict (decrypted on load, written without encryption)
+
     // For incremental saves, use the same XRef format as the original document
     // unless explicitly overridden by the caller
     const useXRefStream = options.useXRefStream ?? (useIncremental ? this.usesXRefStreams : false);
 
     if (useIncremental) {
-      return writeIncremental(this.ctx.registry, {
+      const result = await writeIncremental(this.ctx.registry, {
         originalBytes: this.originalBytes,
         originalXRefOffset: this.originalXRefOffset,
         root,
         info: infoRef ?? undefined,
+        encrypt: encryptRef,
+        id: fileId,
         useXRefStream,
+        securityHandler,
       });
+
+      // Reset pending security state after successful save
+      this._pendingSecurity = { action: "none" };
+
+      return result;
     }
 
     // For full save with changes, we need all referenced objects loaded
@@ -2244,12 +2565,20 @@ export class PDF {
     await this.ensureObjectsLoaded();
 
     // Full save
-    return writeComplete(this.ctx.registry, {
+    const result = await writeComplete(this.ctx.registry, {
       version: this.ctx.info.version,
       root,
       info: infoRef ?? undefined,
+      encrypt: encryptRef,
+      id: fileId,
       useXRefStream,
+      securityHandler,
     });
+
+    // Reset pending security state after successful save
+    this._pendingSecurity = { action: "none" };
+
+    return result;
   }
 
   /**

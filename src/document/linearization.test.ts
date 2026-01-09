@@ -94,6 +94,7 @@ describe("parseLinearizationDict", () => {
 describe("checkIncrementalSaveBlocker", () => {
   it("returns null when incremental save is possible", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: false,
       recoveredViaBruteForce: false,
       encryptionChanged: false,
@@ -104,8 +105,22 @@ describe("checkIncrementalSaveBlocker", () => {
     expect(blocker).toBeNull();
   });
 
+  it("returns 'newly-created' for newly created PDFs", () => {
+    const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: true,
+      isLinearized: false,
+      recoveredViaBruteForce: false,
+      encryptionChanged: false,
+      encryptionAdded: false,
+      encryptionRemoved: false,
+    });
+
+    expect(blocker).toBe("newly-created");
+  });
+
   it("returns 'linearized' for linearized PDFs", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: true,
       recoveredViaBruteForce: false,
       encryptionChanged: false,
@@ -118,6 +133,7 @@ describe("checkIncrementalSaveBlocker", () => {
 
   it("returns 'brute-force-recovery' for recovered PDFs", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: false,
       recoveredViaBruteForce: true,
       encryptionChanged: false,
@@ -130,6 +146,7 @@ describe("checkIncrementalSaveBlocker", () => {
 
   it("returns 'encryption-added' when encryption was added", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: false,
       recoveredViaBruteForce: false,
       encryptionChanged: false,
@@ -142,6 +159,7 @@ describe("checkIncrementalSaveBlocker", () => {
 
   it("returns 'encryption-removed' when encryption was removed", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: false,
       recoveredViaBruteForce: false,
       encryptionChanged: false,
@@ -154,6 +172,7 @@ describe("checkIncrementalSaveBlocker", () => {
 
   it("returns 'encryption-changed' when encryption params changed", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: false,
       isLinearized: false,
       recoveredViaBruteForce: false,
       encryptionChanged: true,
@@ -164,8 +183,9 @@ describe("checkIncrementalSaveBlocker", () => {
     expect(blocker).toBe("encryption-changed");
   });
 
-  it("prioritizes linearized over other blockers", () => {
+  it("prioritizes newly-created over other blockers", () => {
     const blocker = checkIncrementalSaveBlocker({
+      isNewlyCreated: true,
       isLinearized: true,
       recoveredViaBruteForce: true,
       encryptionChanged: true,
@@ -173,7 +193,7 @@ describe("checkIncrementalSaveBlocker", () => {
       encryptionRemoved: false,
     });
 
-    // Linearized is checked first
-    expect(blocker).toBe("linearized");
+    // Newly created is checked first
+    expect(blocker).toBe("newly-created");
   });
 });

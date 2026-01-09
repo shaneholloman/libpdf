@@ -76,6 +76,9 @@ export interface ParsedDocument {
   /** Document permissions (if encrypted and authenticated) */
   permissions: Permissions | null;
 
+  /** Security handler (if encrypted) - for advanced operations */
+  securityHandler: StandardSecurityHandler | null;
+
   /**
    * Authenticate with a password.
    * Call this if initial authentication failed or to try a different password.
@@ -765,6 +768,7 @@ export class DocumentParser {
       encryption: encryptionDict,
       isAuthenticated: securityHandler?.isAuthenticated ?? !isEncrypted,
       permissions: securityHandler?.permissions ?? null,
+      securityHandler,
       authenticate,
 
       // Object access

@@ -14,27 +14,24 @@ async function main() {
   console.log("Loading encrypted PDF...\n");
 
   // Load an encrypted PDF fixture
-  // This PDF is encrypted with password "test123"
+  // PasswordSample-128bit.pdf uses: owner="owner", user="user"
   const bytes = await loadFixture("encryption", "PasswordSample-128bit.pdf");
 
-  // Try loading without a password (will fail or have limited access)
+  // Try loading without a password (will have limited access)
   console.log("=== Attempting without password ===");
-  try {
-    const pdfNoPassword = await PDF.load(bytes);
-    console.log(`Encrypted: ${pdfNoPassword.isEncrypted}`);
-    console.log(`Authenticated: ${pdfNoPassword.isAuthenticated}`);
-  } catch (error) {
-    console.log(`Failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  const pdfNoPassword = await PDF.load(bytes);
+  console.log(`Encrypted: ${pdfNoPassword.isEncrypted}`);
+  console.log(`Authenticated: ${pdfNoPassword.isAuthenticated}`);
 
-  // Load with the correct password
-  console.log("\n=== Loading with password ===");
+  // Load with the owner password for full access
+  console.log("\n=== Loading with owner password ===");
   const pdf = await PDF.load(bytes, {
-    credentials: "test123",
+    credentials: "owner",
   });
 
   console.log(`Encrypted: ${pdf.isEncrypted}`);
   console.log(`Authenticated: ${pdf.isAuthenticated}`);
+  console.log(`Has owner access: ${pdf.hasOwnerAccess()}`);
   console.log(`Page Count: ${pdf.getPageCount()}`);
 
   // Show the page content is now accessible
@@ -43,9 +40,9 @@ async function main() {
     console.log(`\nPage 1 Size: ${page.width} x ${page.height} points`);
   }
 
-  // Save as unencrypted PDF
-  // Note: The library currently saves without encryption by default
-  console.log("\nSaving decrypted copy...");
+  // Remove protection and save as unencrypted PDF
+  console.log("\nRemoving protection and saving...");
+  pdf.removeProtection();
   const decryptedBytes = await pdf.save();
 
   const outputPath = await saveOutput("01-basic/decrypted-document.pdf", decryptedBytes);

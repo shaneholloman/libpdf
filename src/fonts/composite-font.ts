@@ -17,8 +17,9 @@
  * >>
  */
 
-import type { PdfArray } from "#src/objects/pdf-array";
+import { PdfArray } from "#src/objects/pdf-array";
 import type { PdfDict } from "#src/objects/pdf-dict";
+import { PdfRef } from "#src/objects/pdf-ref.ts";
 import { CIDFont, parseCIDFont } from "./cid-font";
 import { CMap, parseCMap } from "./cmap";
 import type { FontDescriptor } from "./font-descriptor";
@@ -134,6 +135,48 @@ export class CompositeFont extends PdfFont {
 }
 
 /**
+ * Parse CMap from encoding value.
+ */
+function parseCMapFromEncoding(
+  encodingValue: unknown,
+  options: {
+    resolveRef?: (ref: unknown) => PdfDict | PdfArray | null;
+    decodeStream?: (stream: unknown) => Uint8Array | null;
+  },
+): CMap {
+  if (!encodingValue || typeof encodingValue !== "object") {
+    return CMap.identityH();
+  }
+
+  const enc = encodingValue as { type?: string; value?: string };
+
+  // Predefined CMap (e.g., Identity-H)
+  if (enc.type === "name" && enc.value) {
+    return CMap.getPredefined(enc.value) ?? CMap.identityH();
+  }
+
+  // Embedded CMap stream
+  if (enc.type === "stream" && options.decodeStream) {
+    const data = options.decodeStream(encodingValue);
+
+    return data ? parseCMap(data) : CMap.identityH();
+  }
+
+  // Reference to CMap stream
+  if (enc.type === "ref" && options.resolveRef && options.decodeStream) {
+    const resolved = options.resolveRef(encodingValue);
+
+    if (resolved && (resolved as { type?: string }).type === "stream") {
+      const data = options.decodeStream(resolved);
+
+      return data ? parseCMap(data) : CMap.identityH();
+    }
+  }
+
+  return CMap.identityH();
+}
+
+/**
  * Parse a CompositeFont from a PDF font dictionary.
  */
 export function parseCompositeFont(
@@ -147,33 +190,22 @@ export function parseCompositeFont(
   const baseFontName = dict.getName("BaseFont")?.value ?? "Unknown";
 
   // Parse encoding (CMap)
-  let cmap: CMap;
-  const encodingValue = dict.get("Encoding");
-
-  if (encodingValue?.type === "name") {
-    // Predefined CMap (e.g., Identity-H)
-    const predefined = CMap.getPredefined(encodingValue.value);
-    cmap = predefined ?? CMap.identityH();
-  } else if (encodingValue?.type === "stream" && options.decodeStream) {
-    // Embedded CMap stream
-    const data = options.decodeStream(encodingValue);
-    cmap = data ? parseCMap(data) : CMap.identityH();
-  } else if (encodingValue?.type === "ref" && options.resolveRef && options.decodeStream) {
-    // Reference to CMap stream
-    const resolved = options.resolveRef(encodingValue);
-    if (resolved?.type === "stream") {
-      const data = options.decodeStream(resolved);
-      cmap = data ? parseCMap(data) : CMap.identityH();
-    } else {
-      cmap = CMap.identityH();
-    }
-  } else {
-    cmap = CMap.identityH();
-  }
+  const cmap = parseCMapFromEncoding(dict.get("Encoding"), options);
 
   // Parse DescendantFonts (should be array with one CIDFont)
+  // DescendantFonts can be inline array or a ref to an array
   let cidFont: CIDFont;
-  const descendantsArray = dict.getArray("DescendantFonts");
+  let descendants = dict.get("DescendantFonts");
+  let descendantsArray: PdfArray | null = null;
+
+  // If DescendantFonts is a ref, resolve it
+  if (descendants instanceof PdfRef && options.resolveRef) {
+    descendants = options.resolveRef(descendants) ?? undefined;
+  }
+
+  if (descendants instanceof PdfArray) {
+    descendantsArray = descendants;
+  }
 
   if (descendantsArray && descendantsArray.length > 0) {
     const firstDescendant = descendantsArray.at(0);

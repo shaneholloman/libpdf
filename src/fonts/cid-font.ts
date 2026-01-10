@@ -18,8 +18,10 @@
  * >>
  */
 
-import type { PdfArray } from "#src/objects/pdf-array";
+import { PdfArray } from "#src/objects/pdf-array";
 import type { PdfDict } from "#src/objects/pdf-dict";
+import { isPdfArray } from "#src/objects/pdf-object.ts";
+import { PdfRef } from "#src/objects/pdf-ref.ts";
 import { type EmbeddedParserOptions, parseEmbeddedProgram } from "./embedded-parser";
 import { FontDescriptor } from "./font-descriptor";
 import type { FontProgram } from "./font-program/index.ts";
@@ -289,9 +291,20 @@ export function parseCIDFont(
   // Parse default width
   const defaultWidth = dict.getNumber("DW")?.value ?? 1000;
 
-  // Parse /W array
+  // Parse /W array (can be inline or a ref)
   let widths = new CIDWidthMap();
-  const wArray = dict.getArray("W");
+  let w = dict.get("W");
+
+  let wArray: PdfArray | null = null;
+
+  // W might be a ref to an array - resolve it
+  if (w instanceof PdfRef && options.resolveRef) {
+    w = options.resolveRef(w) ?? undefined;
+  }
+
+  if (w instanceof PdfArray) {
+    wArray = w;
+  }
 
   if (wArray) {
     widths = parseCIDWidths(wArray);

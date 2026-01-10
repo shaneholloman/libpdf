@@ -12,6 +12,8 @@ import type { TableRecord } from "./types.ts";
 
 /** TrueType magic number (version 1.0 as Fixed) */
 const TTF_MAGIC = 0x00010000;
+/** TrueType magic number ('true' - Apple variant) */
+const TTF_TRUE_MAGIC = 0x74727565;
 /** OpenType magic number ('OTTO') */
 const OTF_MAGIC = 0x4f54544f;
 /** TrueType collection magic ('ttcf') */
@@ -45,7 +47,7 @@ export function parseTTF(data: Uint8Array, options: ParseOptions = {}): TrueType
     throw new Error("TrueType Collections (.ttc) are not yet supported");
   }
 
-  if (version !== TTF_MAGIC && version !== OTF_MAGIC) {
+  if (version !== TTF_MAGIC && version !== TTF_TRUE_MAGIC && version !== OTF_MAGIC) {
     throw new Error(`Invalid font: unknown version 0x${version.toString(16)}`);
   }
 
@@ -155,5 +157,10 @@ export function isTTF(data: Uint8Array): boolean {
 
   const version = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
 
-  return version === TTF_MAGIC || version === OTF_MAGIC || version === TTC_MAGIC;
+  return (
+    version === TTF_MAGIC ||
+    version === TTF_TRUE_MAGIC ||
+    version === OTF_MAGIC ||
+    version === TTC_MAGIC
+  );
 }

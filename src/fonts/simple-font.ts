@@ -19,8 +19,10 @@
  */
 
 import { unicodeToGlyphName } from "#src/helpers/unicode";
-import type { PdfArray } from "#src/objects/pdf-array";
+import { PdfArray } from "#src/objects/pdf-array";
 import type { PdfDict } from "#src/objects/pdf-dict";
+import { PdfNumber } from "#src/objects/pdf-number.ts";
+import { PdfRef } from "#src/objects/pdf-ref.ts";
 import { type EmbeddedParserOptions, parseEmbeddedProgram } from "./embedded-parser";
 import { DifferencesEncoding } from "./encodings/differences";
 import type { FontEncoding } from "./encodings/encoding";
@@ -268,15 +270,26 @@ export function parseSimpleFont(
   const firstChar = dict.getNumber("FirstChar")?.value ?? 0;
   const lastChar = dict.getNumber("LastChar")?.value ?? 255;
 
-  // Parse widths array
-  const widthsArray = dict.getArray("Widths");
+  // Parse widths array (can be inline or a ref)
+
+  let w = dict.get("Widths");
+  let widthsArray: PdfArray | null = null;
+
+  if (w instanceof PdfRef && options.resolveRef) {
+    w = options.resolveRef(w) ?? undefined;
+  }
+
+  if (w instanceof PdfArray) {
+    widthsArray = w;
+  }
+
   const widths: number[] = [];
 
   if (widthsArray) {
     for (let i = 0; i < widthsArray.length; i++) {
       const item = widthsArray.at(i);
 
-      if (item && item.type === "number") {
+      if (item instanceof PdfNumber) {
         widths.push(item.value);
       } else {
         widths.push(0);
@@ -407,21 +420,18 @@ function parseEncodingDict(dict: PdfDict): FontEncoding {
   return new DifferencesEncoding(baseEncoding, differences);
 }
 
+/** Map of encoding names to their implementations. */
+const ENCODING_MAP: Record<string, FontEncoding> = {
+  WinAnsiEncoding: WinAnsiEncoding.instance,
+  MacRomanEncoding: MacRomanEncoding.instance,
+  StandardEncoding: StandardEncoding.instance,
+  // MacExpertEncoding not implemented - fall back to Standard
+  MacExpertEncoding: StandardEncoding.instance,
+};
+
 /**
  * Get encoding by name.
  */
 function getEncodingByName(name: string): FontEncoding {
-  switch (name) {
-    case "WinAnsiEncoding":
-      return WinAnsiEncoding.instance;
-    case "MacRomanEncoding":
-      return MacRomanEncoding.instance;
-    case "StandardEncoding":
-      return StandardEncoding.instance;
-    case "MacExpertEncoding":
-      // MacExpertEncoding not implemented - fall back
-      return StandardEncoding.instance;
-    default:
-      return WinAnsiEncoding.instance;
-  }
+  return ENCODING_MAP[name] ?? WinAnsiEncoding.instance;
 }

@@ -16,6 +16,7 @@
  */
 
 import { ContentStreamBuilder } from "#src/content/content-stream";
+import { Matrix } from "#src/helpers/matrix";
 import {
   concatMatrix,
   drawXObject,
@@ -56,18 +57,6 @@ export interface FlattenOptions {
 
   /** Font size to use (0 = auto) */
   fontSize?: number;
-}
-
-/**
- * Transformation matrix components.
- */
-interface TransformMatrix {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-  e: number;
-  f: number;
 }
 
 /**
@@ -423,10 +412,7 @@ export class FormFlattener {
    *
    * Rotation is handled by the appearance stream's Matrix, NOT by this transform.
    */
-  private calculateTransformMatrix(
-    widget: WidgetAnnotation,
-    appearance: PdfStream,
-  ): TransformMatrix {
+  private calculateTransformMatrix(widget: WidgetAnnotation, appearance: PdfStream): Matrix {
     // Widget rectangle on page
     const [rx1, ry1, rx2, ry2] = widget.rect;
     const rectWidth = rx2 - rx1;
@@ -444,14 +430,7 @@ export class FormFlattener {
     const translateX = rx1 - transformedBBox.x * scaleX;
     const translateY = ry1 - transformedBBox.y * scaleY;
 
-    return {
-      a: scaleX,
-      b: 0,
-      c: 0,
-      d: scaleY,
-      e: translateX,
-      f: translateY,
-    };
+    return new Matrix(scaleX, 0, 0, scaleY, translateX, translateY);
   }
 
   /**
@@ -467,14 +446,13 @@ export class FormFlattener {
     width: number;
     height: number;
   } {
-    const bbox = this.getAppearanceBBox(appearance);
-    const [bx1, by1, bx2, by2] = bbox;
+    const [bx1, by1, bx2, by2] = this.getAppearanceBBox(appearance);
 
     // Get the appearance's Matrix (if any)
-    const matrixArray = appearance.getArray("Matrix");
+    const matrix = this.getAppearanceMatrix(appearance);
 
-    if (!matrixArray || matrixArray.length < 6) {
-      // No matrix - return BBox as-is
+    if (matrix.isIdentity()) {
+      // No transformation - return BBox as-is
       return {
         x: bx1,
         y: by1,
@@ -483,32 +461,17 @@ export class FormFlattener {
       };
     }
 
-    // Extract matrix components [a, b, c, d, e, f]
-    const a = (matrixArray.at(0) as PdfNumber | undefined)?.value ?? 1;
-    const b = (matrixArray.at(1) as PdfNumber | undefined)?.value ?? 0;
-    const c = (matrixArray.at(2) as PdfNumber | undefined)?.value ?? 0;
-    const d = (matrixArray.at(3) as PdfNumber | undefined)?.value ?? 1;
-    const e = (matrixArray.at(4) as PdfNumber | undefined)?.value ?? 0;
-    const f = (matrixArray.at(5) as PdfNumber | undefined)?.value ?? 0;
-
     // Transform all four corners of the BBox
-    // x' = a*x + c*y + e
-    // y' = b*x + d*y + f
     const corners = [
-      { x: bx1, y: by1 }, // bottom-left
-      { x: bx2, y: by1 }, // bottom-right
-      { x: bx2, y: by2 }, // top-right
-      { x: bx1, y: by2 }, // top-left
+      matrix.transformPoint(bx1, by1), // bottom-left
+      matrix.transformPoint(bx2, by1), // bottom-right
+      matrix.transformPoint(bx2, by2), // top-right
+      matrix.transformPoint(bx1, by2), // top-left
     ];
 
-    const transformed = corners.map(({ x, y }) => ({
-      x: a * x + c * y + e,
-      y: b * x + d * y + f,
-    }));
-
     // Find the bounding box of transformed corners
-    const xs = transformed.map(p => p.x);
-    const ys = transformed.map(p => p.y);
+    const xs = corners.map(p => p.x);
+    const ys = corners.map(p => p.y);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
@@ -520,6 +483,26 @@ export class FormFlattener {
       width: maxX - minX,
       height: maxY - minY,
     };
+  }
+
+  /**
+   * Get the appearance stream's transformation matrix.
+   */
+  private getAppearanceMatrix(appearance: PdfStream): Matrix {
+    const matrixArray = appearance.getArray("Matrix");
+
+    if (!matrixArray || matrixArray.length < 6) {
+      return Matrix.identity();
+    }
+
+    return new Matrix(
+      (matrixArray.at(0) as PdfNumber | undefined)?.value ?? 1,
+      (matrixArray.at(1) as PdfNumber | undefined)?.value ?? 0,
+      (matrixArray.at(2) as PdfNumber | undefined)?.value ?? 0,
+      (matrixArray.at(3) as PdfNumber | undefined)?.value ?? 1,
+      (matrixArray.at(4) as PdfNumber | undefined)?.value ?? 0,
+      (matrixArray.at(5) as PdfNumber | undefined)?.value ?? 0,
+    );
   }
 
   /**

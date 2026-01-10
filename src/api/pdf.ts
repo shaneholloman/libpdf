@@ -35,7 +35,9 @@ import { XRefParser } from "#src/parser/xref-parser";
 import { generateEncryption, reconstructEncryptDict } from "#src/security/encryption-generator";
 import { PermissionDeniedError } from "#src/security/errors";
 import { DEFAULT_PERMISSIONS, type Permissions } from "#src/security/permissions";
+import type { StandardSecurityHandler } from "#src/security/standard-handler.ts";
 import type { SignOptions, SignResult } from "#src/signatures/types";
+import type { FindTextOptions, PageText, TextMatch } from "#src/text/types";
 import { writeComplete, writeIncremental } from "#src/writer/pdf-writer";
 import { PDFAttachments } from "./pdf-attachments";
 import { PDFCatalog } from "./pdf-catalog";
@@ -616,12 +618,16 @@ export class PDF {
     // Map internal algorithm to public API type
     let algorithm: EncryptionAlgorithmOption | undefined;
 
-    if (encryption.algorithm === "RC4") {
-      algorithm = encryption.keyLengthBits <= 40 ? "RC4-40" : "RC4-128";
-    } else if (encryption.algorithm === "AES-128") {
-      algorithm = "AES-128";
-    } else if (encryption.algorithm === "AES-256") {
-      algorithm = "AES-256";
+    switch (encryption.algorithm) {
+      case "RC4":
+        algorithm = encryption.keyLengthBits <= 40 ? "RC4-40" : "RC4-128";
+        break;
+      case "AES-128":
+        algorithm = "AES-128";
+        break;
+      case "AES-256":
+        algorithm = "AES-256";
+        break;
     }
 
     // Determine how the document was authenticated
@@ -2405,6 +2411,74 @@ export class PDF {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Text Extraction
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Extract text from all pages in the document.
+   *
+   * Returns an array of PageText objects, one per page, containing
+   * structured text content with position information.
+   *
+   * @returns Array of PageText for each page
+   *
+   * @example
+   * ```typescript
+   * const allText = await pdf.extractText();
+   * for (const pageText of allText) {
+   *   console.log(`Page ${pageText.pageIndex}: ${pageText.text}`);
+   * }
+   * ```
+   */
+  async extractText(): Promise<PageText[]> {
+    const pages = await this.getPages();
+    const results: PageText[] = [];
+
+    for (const page of pages) {
+      results.push(await page.extractText());
+    }
+
+    return results;
+  }
+
+  /**
+   * Search for text across all pages in the document.
+   *
+   * @param query - String or RegExp to search for
+   * @param options - Search options (pages, case sensitivity, whole word)
+   * @returns Array of matches with positions
+   *
+   * @example
+   * ```typescript
+   * // Search across all pages
+   * const matches = await pdf.findText("invoice");
+   *
+   * // Search specific pages
+   * const matches2 = await pdf.findText("total", { pages: [0, 1] });
+   *
+   * // Case-insensitive search
+   * const matches3 = await pdf.findText("NAME", { caseSensitive: false });
+   *
+   * // Regex search for template placeholders
+   * const placeholders = await pdf.findText(/\{\{\s*\w+\s*\}\}/g);
+   * ```
+   */
+  async findText(query: string | RegExp, options: FindTextOptions = {}): Promise<TextMatch[]> {
+    const pages = await this.getPages();
+    const pagesToSearch = options.pages ?? Array.from({ length: pages.length }, (_, i) => i);
+    const results: TextMatch[] = [];
+
+    for (const pageIndex of pagesToSearch) {
+      if (pageIndex >= 0 && pageIndex < pages.length) {
+        const matches = await pages[pageIndex].findText(query, options);
+        results.push(...matches);
+      }
+    }
+
+    return results;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Change tracking
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2496,9 +2570,7 @@ export class PDF {
     // Handle encryption based on pending security state
     let encryptRef: PdfRef | undefined;
     let fileId: [Uint8Array, Uint8Array] | undefined;
-    let securityHandler:
-      | import("#src/security/standard-handler").StandardSecurityHandler
-      | undefined;
+    let securityHandler: StandardSecurityHandler | undefined;
 
     if (this._pendingSecurity.action === "encrypt" && this._pendingSecurity.options) {
       // Generate new encryption

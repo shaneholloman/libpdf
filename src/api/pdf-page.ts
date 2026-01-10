@@ -32,7 +32,10 @@ import type {
 } from "#src/document/forms/fields";
 import { TerminalField } from "#src/document/forms/fields/base";
 import { EmbeddedFont } from "#src/fonts/embedded-font";
+import { parseFont } from "#src/fonts/font-factory";
+import type { PdfFont } from "#src/fonts/pdf-font";
 import { isStandard14Font } from "#src/fonts/standard-14";
+import { parseToUnicode } from "#src/fonts/to-unicode";
 import { black } from "#src/helpers/colors";
 import {
   beginText,
@@ -53,6 +56,10 @@ import { PdfNumber } from "#src/objects/pdf-number";
 import { PdfRef } from "#src/objects/pdf-ref";
 import { PdfStream } from "#src/objects/pdf-stream";
 import { PdfString } from "#src/objects/pdf-string";
+import { getPlainText, groupCharsIntoLines } from "#src/text/line-grouper";
+import { TextExtractor } from "#src/text/text-extractor";
+import { searchPage } from "#src/text/text-search";
+import type { ExtractTextOptions, FindTextOptions, PageText, TextMatch } from "#src/text/types";
 import {
   drawCircleOps,
   drawEllipseOps,
@@ -1275,17 +1282,27 @@ export class PDFPage {
     } else if (existingContents instanceof PdfRef) {
       // Reference to a stream - wrap in array with our content first
       this.dict.set("Contents", new PdfArray([newContent, existingContents]));
+      this._contentWrapped = true; // Mark as modified to prevent double-wrapping in appendContent
     } else if (existingContents instanceof PdfStream) {
       // Direct stream - wrap in array with our content first
       this.dict.set("Contents", new PdfArray([newContent, existingContents]));
+      this._contentWrapped = true; // Mark as modified to prevent double-wrapping in appendContent
     } else if (existingContents instanceof PdfArray) {
       // Array of streams/refs - prepend our stream
       existingContents.insert(0, newContent);
+      this._contentWrapped = true; // Mark as modified to prevent double-wrapping in appendContent
     }
   }
 
+  /** Track whether we've already wrapped the original content in q/Q */
+  private _contentWrapped = false;
+
   /**
    * Append content to the page's content stream (for foreground drawing).
+   *
+   * To ensure our drawing uses standard PDF coordinates (Y=0 at bottom),
+   * we wrap the existing content in q/Q so any CTM changes are isolated,
+   * then append our content which runs with the default CTM.
    */
   private appendContent(content: string): void {
     const existingContents = this.dict.get("Contents");
@@ -1294,15 +1311,42 @@ export class PDFPage {
     if (!existingContents) {
       // No existing content - just set our stream
       this.dict.set("Contents", newContent);
-    } else if (existingContents instanceof PdfRef) {
-      // Reference to a stream - wrap in array with existing first, then our content
-      this.dict.set("Contents", new PdfArray([existingContents, newContent]));
-    } else if (existingContents instanceof PdfStream) {
-      // Direct stream - wrap in array with existing first, then our content
-      this.dict.set("Contents", new PdfArray([existingContents, newContent]));
-    } else if (existingContents instanceof PdfArray) {
-      // Array of streams/refs - append our stream
-      existingContents.push(newContent);
+      return;
+    }
+
+    // First time appending: wrap existing content in q/Q to isolate CTM changes
+    if (!this._contentWrapped) {
+      this._contentWrapped = true;
+      const qStream = this.createContentStream("q\n");
+      const QStream = this.createContentStream("\nQ");
+
+      if (existingContents instanceof PdfRef) {
+        this.dict.set("Contents", new PdfArray([qStream, existingContents, QStream, newContent]));
+      } else if (existingContents instanceof PdfStream) {
+        this.dict.set("Contents", new PdfArray([qStream, existingContents, QStream, newContent]));
+      } else if (existingContents instanceof PdfArray) {
+        // Insert q at beginning, Q after existing, then our content
+        const newArray = new PdfArray([qStream]);
+        for (let i = 0; i < existingContents.length; i++) {
+          const item = existingContents.at(i);
+          if (item) {
+            newArray.push(item);
+          }
+        }
+        newArray.push(QStream);
+        newArray.push(newContent);
+        this.dict.set("Contents", newArray);
+      }
+    } else {
+      // Already wrapped - just append our new content
+      const contents = this.dict.get("Contents");
+      if (contents instanceof PdfArray) {
+        contents.push(newContent);
+      } else {
+        // Unexpected state - contents should be an array after wrapping
+        // Wrap in array now to recover
+        this.dict.set("Contents", new PdfArray([contents as PdfStream | PdfRef, newContent]));
+      }
     }
   }
 
@@ -1463,5 +1507,418 @@ export class PDFPage {
     }
 
     return PdfString.fromBytes(bytes);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Text Extraction
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Extract all text content from this page.
+   *
+   * Returns structured text with line/span organization and position information.
+   * The plain text is available in the `text` property.
+   *
+   * @param options - Extraction options
+   * @returns Page text with structured content and positions
+   *
+   * @example
+   * ```typescript
+   * const pageText = await page.extractText();
+   * console.log(pageText.text); // Plain text
+   *
+   * // Access structured content
+   * for (const line of pageText.lines) {
+   *   console.log(`Line at y=${line.baseline}: "${line.text}"`);
+   * }
+   * ```
+   */
+  async extractText(_options: ExtractTextOptions = {}): Promise<PageText> {
+    // Get content stream bytes
+    const contentBytes = await this.getContentBytes();
+
+    // Create font resolver
+    const resolveFont = await this.createFontResolver();
+
+    // Extract characters
+    const extractor = new TextExtractor({ resolveFont });
+    const chars = extractor.extract(contentBytes);
+
+    // Group into lines and spans
+    const lines = groupCharsIntoLines(chars);
+
+    // Build plain text
+    const text = getPlainText(lines);
+
+    return {
+      pageIndex: this.index,
+      width: this.width,
+      height: this.height,
+      lines,
+      text,
+    };
+  }
+
+  /**
+   * Search for text on this page.
+   *
+   * @param query - String or RegExp to search for
+   * @param options - Search options (case sensitivity, whole word)
+   * @returns Array of matches with positions
+   *
+   * @example
+   * ```typescript
+   * // String search
+   * const matches = await page.findText("{{ name }}");
+   * for (const match of matches) {
+   *   console.log(`Found at:`, match.bbox);
+   * }
+   *
+   * // Regex search
+   * const placeholders = await page.findText(/\{\{\s*\w+\s*\}\}/g);
+   * ```
+   */
+  async findText(query: string | RegExp, options: FindTextOptions = {}): Promise<TextMatch[]> {
+    const pageText = await this.extractText();
+
+    return searchPage(pageText, query, options);
+  }
+
+  /**
+   * Get the concatenated content stream bytes.
+   */
+  private async getContentBytes(): Promise<Uint8Array> {
+    const contents = this.dict.get("Contents");
+
+    if (!contents) {
+      return new Uint8Array(0);
+    }
+
+    // Single stream reference
+    if (contents instanceof PdfRef && this.ctx) {
+      const stream = await this.ctx.resolve(contents);
+
+      if (stream instanceof PdfStream) {
+        return await stream.getDecodedData();
+      }
+    }
+
+    // Direct stream
+    if (contents instanceof PdfStream) {
+      return await contents.getDecodedData();
+    }
+
+    // Array of streams
+    if (contents instanceof PdfArray) {
+      const chunks: Uint8Array[] = [];
+
+      for (let i = 0; i < contents.length; i++) {
+        const item = contents.at(i);
+
+        if (item instanceof PdfRef && this.ctx) {
+          const stream = await this.ctx.resolve(item);
+
+          if (stream instanceof PdfStream) {
+            chunks.push(await stream.getDecodedData());
+          }
+        } else if (item instanceof PdfStream) {
+          chunks.push(await item.getDecodedData());
+        }
+      }
+
+      // Concatenate with space separator
+      return this.concatenateChunks(chunks);
+    }
+
+    return new Uint8Array(0);
+  }
+
+  /**
+   * Concatenate multiple byte arrays with space separator.
+   */
+  private concatenateChunks(chunks: Uint8Array[]): Uint8Array {
+    if (chunks.length === 0) {
+      return new Uint8Array(0);
+    }
+
+    if (chunks.length === 1) {
+      return chunks[0];
+    }
+
+    // Calculate total size (with spaces between chunks)
+    const totalSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0) + chunks.length - 1;
+    const result = new Uint8Array(totalSize);
+    let offset = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+      if (i > 0) {
+        result[offset++] = 0x20; // Space between streams
+      }
+
+      result.set(chunks[i], offset);
+      offset += chunks[i].length;
+    }
+
+    return result;
+  }
+
+  /**
+   * Resolve the Resources dictionary, walking up the page tree if needed.
+   *
+   * PDF pages can inherit Resources from parent Pages nodes (see PDF spec 7.7.3.4).
+   * This method checks the page first, then walks up the Parent chain.
+   */
+  private async resolveInheritedResources(): Promise<PdfDict | null> {
+    if (!this.ctx) {
+      return null;
+    }
+
+    // Start with the page dict
+    let currentDict: PdfDict | null = this.dict;
+
+    while (currentDict) {
+      // Check for Resources on the current node
+      const resourcesEntry = currentDict.get("Resources");
+
+      if (resourcesEntry instanceof PdfRef) {
+        const resolved = await this.ctx.resolve(resourcesEntry);
+
+        if (resolved instanceof PdfDict) {
+          return resolved;
+        }
+      } else if (resourcesEntry instanceof PdfDict) {
+        return resourcesEntry;
+      }
+
+      // Walk up to the Parent node
+      const parentEntry = currentDict.get("Parent");
+
+      if (parentEntry instanceof PdfRef) {
+        const parent = await this.ctx.resolve(parentEntry);
+
+        if (parent instanceof PdfDict) {
+          currentDict = parent;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Create a font resolver function for text extraction.
+   */
+  private async createFontResolver(): Promise<(name: string) => PdfFont | null> {
+    // Get the page's Font resources (may be a ref or inherited from parent)
+    const resourcesDict = await this.resolveInheritedResources();
+
+    if (!resourcesDict) {
+      return () => null;
+    }
+
+    let fontDict: PdfDict | null = null;
+    const fontEntry = resourcesDict.get("Font");
+
+    // Resolve if it's a reference
+    if (fontEntry instanceof PdfRef && this.ctx) {
+      const resolved = await this.ctx.resolve(fontEntry);
+
+      if (resolved instanceof PdfDict) {
+        fontDict = resolved;
+      }
+    } else if (fontEntry instanceof PdfDict) {
+      fontDict = fontEntry;
+    }
+
+    if (!fontDict) {
+      return () => null;
+    }
+
+    // Preload all font dictionaries and build the cache
+    const fontCache = new Map<string, PdfFont>();
+
+    for (const [nameObj, fontEntry] of fontDict) {
+      const name = nameObj.value;
+      let fontDictEntry: PdfDict | null = null;
+
+      if (fontEntry instanceof PdfRef && this.ctx) {
+        const resolved = await this.ctx.resolve(fontEntry);
+
+        if (resolved instanceof PdfDict) {
+          fontDictEntry = resolved;
+        }
+      } else if (fontEntry instanceof PdfDict) {
+        fontDictEntry = fontEntry;
+      }
+
+      if (!fontDictEntry) {
+        continue;
+      }
+
+      // Parse ToUnicode CMap if present
+      let toUnicodeMap = null;
+      const toUnicodeEntry = fontDictEntry.get("ToUnicode");
+
+      if (toUnicodeEntry && this.ctx) {
+        let toUnicodeStream: PdfStream | null = null;
+
+        if (toUnicodeEntry instanceof PdfRef) {
+          const resolved = await this.ctx.resolve(toUnicodeEntry);
+
+          if (resolved instanceof PdfStream) {
+            toUnicodeStream = resolved;
+          }
+        } else if (toUnicodeEntry instanceof PdfStream) {
+          toUnicodeStream = toUnicodeEntry;
+        }
+
+        if (toUnicodeStream) {
+          try {
+            const decoded = await toUnicodeStream.getDecodedData();
+            toUnicodeMap = parseToUnicode(decoded);
+          } catch {
+            // ToUnicode parsing failed - continue without it
+          }
+        }
+      }
+
+      // Pre-resolve all refs that parseFont might need (DescendantFonts, FontDescriptor, etc.)
+      // This is necessary because parseFont uses a synchronous resolveRef callback,
+      // but ctx.getObject() doesn't work for all refs - only ctx.resolve() (async) does.
+      const resolvedRefs = new Map<string, PdfDict | PdfArray | PdfStream>();
+      // Pre-decoded stream data (keyed by ref string for consistent lookup)
+      const decodedStreams = new Map<string, Uint8Array>();
+
+      const preResolveValue = async (value: unknown): Promise<void> => {
+        if (!this.ctx) {
+          return;
+        }
+
+        // If it's a ref, resolve it and cache
+        if (value instanceof PdfRef) {
+          const key = `${value.objectNumber} ${value.generation} R`;
+          if (resolvedRefs.has(key)) {
+            return;
+          }
+
+          const resolved = await this.ctx.resolve(value);
+          if (
+            resolved instanceof PdfDict ||
+            resolved instanceof PdfArray ||
+            resolved instanceof PdfStream
+          ) {
+            resolvedRefs.set(key, resolved);
+            // Pre-decode streams (for font file data)
+            if (resolved instanceof PdfStream) {
+              try {
+                const decoded = await resolved.getDecodedData();
+                decodedStreams.set(key, decoded);
+              } catch {
+                // Decoding failed - will use raw data as fallback
+              }
+            }
+            // Recursively resolve nested values
+            await preResolveValue(resolved);
+          }
+        } else if (value instanceof PdfDict) {
+          // Traverse dict values
+          for (const [, v] of value) {
+            await preResolveValue(v);
+          }
+        } else if (value instanceof PdfArray) {
+          // Traverse array items
+          for (let i = 0; i < value.length; i++) {
+            await preResolveValue(value.at(i));
+          }
+        }
+      };
+
+      // Pre-resolve DescendantFonts (critical for composite fonts)
+      const descendantFontsEntry = fontDictEntry.get("DescendantFonts");
+      await preResolveValue(descendantFontsEntry);
+
+      // Pre-resolve FontDescriptor (for simple fonts)
+      const fontDescriptorEntry = fontDictEntry.get("FontDescriptor");
+      await preResolveValue(fontDescriptorEntry);
+
+      // Pre-resolve Encoding if it's a ref
+      const encodingEntry = fontDictEntry.get("Encoding");
+      await preResolveValue(encodingEntry);
+
+      // Pre-resolve Widths if it's a ref (for simple fonts)
+      const widthsEntry = fontDictEntry.get("Widths");
+      await preResolveValue(widthsEntry);
+
+      // Parse the font with resolved references
+      const pdfFont = parseFont(fontDictEntry, {
+        resolveRef: ref => {
+          if (ref instanceof PdfRef && this.ctx) {
+            const key = `${ref.objectNumber} ${ref.generation} R`;
+            const preResolved = resolvedRefs.get(key);
+
+            if (preResolved) {
+              return preResolved;
+            }
+
+            // Fallback to sync getObject (works for some refs)
+            const obj = this.ctx.getObject(ref);
+
+            if (obj instanceof PdfDict || obj instanceof PdfArray || obj instanceof PdfStream) {
+              return obj;
+            }
+          }
+
+          return null;
+        },
+        decodeStream: stream => {
+          // Check if it's a ref - look up pre-decoded data by ref key
+          if (stream instanceof PdfRef) {
+            const key = `${stream.objectNumber} ${stream.generation} R`;
+            const decoded = decodedStreams.get(key);
+
+            if (decoded) {
+              return decoded;
+            }
+
+            // Fallback to resolving and using raw data
+            const preResolved = resolvedRefs.get(key);
+
+            if (preResolved instanceof PdfStream) {
+              return preResolved.data;
+            }
+          }
+
+          // Direct stream - need to find the ref key that resolved to this stream
+          if (stream instanceof PdfStream) {
+            // Search for the stream in resolvedRefs to find its key
+            for (const [key, resolved] of resolvedRefs) {
+              if (resolved === stream) {
+                const decoded = decodedStreams.get(key);
+
+                if (decoded) {
+                  return decoded;
+                }
+              }
+            }
+
+            // Fallback to raw data
+            return stream.data;
+          }
+
+          return null;
+        },
+        toUnicodeMap,
+      });
+
+      fontCache.set(name, pdfFont);
+    }
+
+    return (name: string): PdfFont | null => {
+      return fontCache.get(name) ?? null;
+    };
   }
 }

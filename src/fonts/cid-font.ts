@@ -20,7 +20,6 @@
 
 import { PdfArray } from "#src/objects/pdf-array";
 import type { PdfDict } from "#src/objects/pdf-dict";
-import { isPdfArray } from "#src/objects/pdf-object.ts";
 import { PdfRef } from "#src/objects/pdf-ref.ts";
 import { type EmbeddedParserOptions, parseEmbeddedProgram } from "./embedded-parser";
 import { FontDescriptor } from "./font-descriptor";

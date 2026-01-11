@@ -90,7 +90,7 @@ async function main() {
     `   Partial matches (includes 'amet', 'consectetuer', etc.): ${partialMatches.length}`,
   );
 
-  console.log("\n" + "=".repeat(50));
+  console.log(`\n${"=".repeat(50)}`);
   console.log("Done!");
 }
 

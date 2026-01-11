@@ -8,7 +8,7 @@
  */
 
 import { black, PDF, rgb } from "../../src/index";
-import { formatBytes, saveOutput } from "../utils";
+import { saveOutput } from "../utils";
 
 async function main() {
   console.log("Setting document language...\n");

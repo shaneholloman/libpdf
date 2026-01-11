@@ -123,7 +123,7 @@ async function main() {
   // Check if dates match (within 1 second tolerance for rounding)
   if (reloadedCreation) {
     const diff = Math.abs(reloadedCreation.getTime() - creationDate.getTime());
-    console.log(`  Creation date match: ${diff < 1000 ? "Yes" : "No (diff: " + diff + "ms)"}`);
+    console.log(`  Creation date match: ${diff < 1000 ? "Yes" : `No (diff: ${diff}ms)`}`);
   }
 
   // === Time zone considerations ===

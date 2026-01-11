@@ -103,7 +103,7 @@ async function main() {
   const examples = await getExampleFiles(filter);
 
   if (examples.length === 0) {
-    console.log("No examples found" + (filter ? ` matching "${filter}"` : ""));
+    console.log(`No examples found${filter ? ` matching "${filter}"` : ""}`);
     process.exit(1);
   }
 
@@ -141,7 +141,7 @@ async function main() {
   const failed = results.filter(r => !r.success).length;
   const totalTime = results.reduce((sum, r) => sum + r.duration, 0);
 
-  console.log("\n" + "═".repeat(68) + "\n");
+  console.log(`\n${"═".repeat(68)}\n`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
   console.log(`Total time: ${(totalTime / 1000).toFixed(2)}s`);
 

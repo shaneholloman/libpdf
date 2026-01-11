@@ -7,7 +7,7 @@
  * Run: npx tsx examples/10-security/permissions-info.ts
  */
 
-import { black, PDF, PdfDict, PdfNumber } from "../../src/index";
+import { black, PDF } from "../../src/index";
 
 async function main() {
   console.log("Reading PDF permission flags...\n");

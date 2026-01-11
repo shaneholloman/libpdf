@@ -12,6 +12,8 @@
  * text matrices (Tm/Tlm).
  */
 
+/** biome-ignore-all lint/suspicious/useAdjacentOverloadSignatures: biome is whiffing */
+
 export class Matrix {
   constructor(
     public readonly a: number,

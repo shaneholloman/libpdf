@@ -282,7 +282,7 @@ export class TextState {
 
     // Build the combined transformation matrix: CTM * Tm
     // This transforms from text rendering space to user space
-    const combined = this.ctm.multiply(this.tm);
+    const _combined = this.ctm.multiply(this.tm);
 
     // Transform baseline point to user space
     const baselinePoint = this.ctm.transformPoint(textX, textY);

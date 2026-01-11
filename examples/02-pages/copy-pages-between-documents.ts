@@ -8,7 +8,7 @@
  */
 
 import { black, PDF } from "../../src/index";
-import { formatBytes, loadFixture, saveOutput } from "../utils";
+import { formatBytes, saveOutput } from "../utils";
 
 async function main() {
   console.log("Copying pages between PDF documents...\n");

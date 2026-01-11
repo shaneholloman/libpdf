@@ -7,7 +7,7 @@
  * Run: npx tsx examples/07-signatures/sign-with-cryptokey.ts
  */
 
-import { black, CryptoKeySigner, P12Signer, PDF } from "../../src/index";
+import { black, P12Signer, PDF } from "../../src/index";
 import { formatBytes, loadFixture, saveOutput } from "../utils";
 
 async function main() {

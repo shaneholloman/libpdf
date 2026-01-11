@@ -7,16 +7,7 @@
  * Run: npx tsx examples/11-advanced/read-document-catalog.ts
  */
 
-import {
-  black,
-  PDF,
-  PdfArray,
-  PdfDict,
-  PdfName,
-  PdfNumber,
-  PdfRef,
-  PdfString,
-} from "../../src/index";
+import { black, PDF, PdfDict, PdfName, PdfNumber, PdfRef, PdfString } from "../../src/index";
 
 async function main() {
   console.log("Reading document catalog and page tree...\n");

@@ -74,7 +74,7 @@ async function main() {
   }
   console.log(`   Total characters across all pages: ${totalChars}`);
 
-  console.log("\n" + "=".repeat(50));
+  console.log(`\n${"=".repeat(50)}`);
   console.log("Done!");
 }
 

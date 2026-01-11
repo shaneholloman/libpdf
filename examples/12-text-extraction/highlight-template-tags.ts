@@ -78,7 +78,7 @@ async function main() {
   console.log(`   Size: ${formatBytes(outputBytes.length)}`);
 
   // Summary
-  console.log("\n" + "=".repeat(50));
+  console.log(`\n${"=".repeat(50)}`);
   console.log("Summary:");
   console.log(`  - Found ${matches.length} template tags`);
   console.log("  - Each tag now has a red border rectangle");

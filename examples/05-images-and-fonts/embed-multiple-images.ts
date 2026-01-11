@@ -54,7 +54,7 @@ async function main() {
       const image = await pdf.embedImage(bytes);
       images.push({ image, label: imgFile.label });
       console.log(`  Loaded: ${imgFile.file} (${image.width}x${image.height})`);
-    } catch (error) {
+    } catch (_error) {
       console.log(`  Skipped: ${imgFile.file} (not found)`);
     }
   }

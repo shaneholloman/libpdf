@@ -25,6 +25,7 @@ async function main() {
 
   // PdfNumber - integers and floats
   const integer = PdfNumber.of(42);
+  // biome-ignore lint/suspicious/noApproximativeNumericConstant: example code
   const float = PdfNumber.of(3.14159);
   console.log(`PdfNumber (int): ${integer.value}`);
   console.log(`PdfNumber (float): ${float.value}`);
@@ -38,7 +39,7 @@ async function main() {
   console.log(`PdfArray length: ${arr.length}`);
 
   // PdfDict - key-value dictionaries
-  const dict = new PdfDict([
+  const _dict = new PdfDict([
     ["Type", PdfName.of("CustomObject")],
     ["Value", PdfNumber.of(100)],
     ["Description", PdfString.fromString("A custom object")],

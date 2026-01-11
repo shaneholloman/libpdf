@@ -67,6 +67,7 @@ async function main() {
   console.log("if (pdf.warnings.length > 0) {");
   console.log("  console.log('Warnings encountered:');");
   console.log("  for (const warning of pdf.warnings) {");
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: example code
   console.log("    console.log(`  - ${warning}`);");
   console.log("  }");
   console.log("}");

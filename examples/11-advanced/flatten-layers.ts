@@ -110,6 +110,7 @@ async function main() {
   console.log("// Before signing, flatten any layers");
   console.log("if (await pdf.hasLayers()) {");
   console.log("  const result = await pdf.flattenLayers();");
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: example code
   console.log("  console.log(`Flattened ${result.layerCount} layers`);");
   console.log("}");
   console.log();

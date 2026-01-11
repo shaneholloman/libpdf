@@ -22,7 +22,7 @@ async function main() {
     throw new Error("Failed to get page");
   }
 
-  const { width, height } = page;
+  const { height } = page;
 
   // Title
   page.drawText("Custom Path Drawing", {

@@ -1,0 +1,534 @@
+---
+title: Errors
+description: Error classes thrown by LibPDF, organized by category.
+---
+
+# Errors
+
+LibPDF uses typed error classes to help you handle failures appropriately. Errors are organized into categories based on when they occur.
+
+```typescript
+import { 
+  SecurityError, 
+  PermissionDeniedError,
+  SignatureError,
+  SignerError,
+  TimestampError,
+} from "@libpdf/core";
+
+try {
+  await pdf.sign({ signer });
+} catch (error) {
+  if (error instanceof SignerError) {
+    console.log("Invalid signer:", error.message);
+  } else if (error instanceof TimestampError) {
+    console.log("Timestamp failed:", error.message);
+  }
+}
+```
+
+## Parse Errors
+
+Thrown when loading a PDF document. These errors indicate structural issues with the PDF file.
+
+> **Note**: Parse error classes are internal and not exported. Use `error.name` to identify specific parse errors, or catch the generic `Error` class.
+
+### RecoverableParseError
+
+Base class for parsing errors that can be recovered via lenient mode.
+
+When `lenient: true` (default), these errors trigger brute-force recovery instead of failing immediately.
+
+```typescript
+try {
+  const pdf = await PDF.load(bytes, { lenient: false });
+} catch (error) {
+  if (error instanceof Error && error.name === "RecoverableParseError") {
+    console.log("Malformed PDF:", error.message);
+    // Try again with lenient mode
+    const pdf = await PDF.load(bytes, { lenient: true });
+  }
+}
+```
+
+---
+
+### XRefParseError
+
+**Extends**: `RecoverableParseError`
+
+Cross-reference table parsing failed.
+
+**Common causes**:
+- Corrupted xref table
+- Invalid xref stream
+- Missing startxref marker
+
+---
+
+### ObjectParseError
+
+**Extends**: `RecoverableParseError`
+
+Object parsing failed.
+
+**Common causes**:
+- Malformed object syntax
+- Invalid object number
+- Truncated object data
+
+---
+
+### StreamDecodeError
+
+**Extends**: `RecoverableParseError`
+
+Stream decompression failed.
+
+**Common causes**:
+- Corrupted compressed data
+- Unknown filter type
+- Missing decode parameters
+
+---
+
+### StructureError
+
+**Extends**: `RecoverableParseError`
+
+PDF structure is invalid.
+
+**Common causes**:
+- Missing required dictionary keys
+- Invalid object references
+- Circular references
+
+---
+
+### UnrecoverableParseError
+
+Thrown when both normal parsing AND brute-force recovery failed. The document is too corrupted to parse.
+
+```typescript
+try {
+  const pdf = await PDF.load(bytes);
+} catch (error) {
+  if (error instanceof Error && error.name === "UnrecoverableParseError") {
+    console.log("Document is unreadable:", error.message);
+  }
+}
+```
+
+---
+
+## Security Errors
+
+Thrown during encryption and authentication operations.
+
+### SecurityError
+
+Base class for all security-related errors.
+
+```typescript
+import { SecurityError } from "@libpdf/core";
+
+try {
+  pdf.removeProtection();
+} catch (error) {
+  if (error instanceof SecurityError) {
+    console.log("Security operation failed:", error.message);
+  }
+}
+```
+
+---
+
+### PermissionDeniedError
+
+**Extends**: `SecurityError`
+
+Operation requires permissions the user doesn't have.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `"PERMISSION_DENIED"` | Error code |
+| `requiredPermission` | `string \| undefined` | Permission needed |
+
+**Common causes**:
+- Calling `removeProtection()` without owner access
+- Calling `setProtection()` without owner access
+- Modifying document without modify permission
+
+```typescript
+try {
+  pdf.removeProtection();
+} catch (error) {
+  if (error instanceof PermissionDeniedError) {
+    console.log(`Need permission: ${error.requiredPermission}`);
+    // Try authenticating with owner password
+    const result = pdf.authenticate("ownerPassword");
+    if (result.isOwner) {
+      pdf.removeProtection();
+    }
+  }
+}
+```
+
+---
+
+### UnsupportedEncryptionError
+
+**Extends**: `SecurityError`
+
+Encryption method or credential type is not supported.
+
+> **Note**: This error class is internal. Use `error.name` to identify it, or catch `SecurityError`.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `EncryptionErrorCode` | Specific error type |
+
+**Error Codes**:
+
+| Code | Description |
+|------|-------------|
+| `NEED_CREDENTIALS` | Document is encrypted, password required |
+| `INVALID_CREDENTIALS` | Password is incorrect |
+| `UNSUPPORTED_ENCRYPTION` | Unknown security handler or algorithm |
+| `UNSUPPORTED_CREDENTIALS` | Certificate credentials not yet supported |
+
+```typescript
+import { SecurityError } from "@libpdf/core";
+
+try {
+  const pdf = await PDF.load(bytes);
+} catch (error) {
+  if (error instanceof SecurityError && error.name === "UnsupportedEncryptionError") {
+    const code = (error as { code?: string }).code;
+    if (code === "NEED_CREDENTIALS") {
+      const pdf = await PDF.load(bytes, { credentials: password });
+    }
+  }
+}
+```
+
+---
+
+### AuthenticationError
+
+**Extends**: `SecurityError`
+
+Password verification failed.
+
+**Common causes**:
+- Incorrect password
+- Missing required encryption fields
+- Corrupted encryption dictionary
+
+---
+
+### DecryptionError
+
+**Extends**: `SecurityError`
+
+Decryption operation failed.
+
+**Common causes**:
+- Wrong decryption key
+- Corrupted encrypted data
+- Invalid padding
+
+---
+
+### EncryptionDictError
+
+**Extends**: `SecurityError`
+
+Encryption dictionary is malformed.
+
+**Common causes**:
+- Missing required /V or /R values
+- Invalid /CF dictionary
+- Unsupported encryption version
+
+---
+
+## Signature Errors
+
+Thrown during digital signature operations.
+
+### SignatureError
+
+Base class for all signature-related errors.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `code` | `string` | Error code |
+
+```typescript
+import { SignatureError } from "@libpdf/core";
+
+try {
+  await pdf.sign({ signer });
+} catch (error) {
+  if (error instanceof SignatureError) {
+    console.log(`Signature failed [${error.code}]: ${error.message}`);
+  }
+}
+```
+
+---
+
+### SignerError
+
+**Extends**: `SignatureError`
+
+**Code**: `SIGNER_ERROR`
+
+Problem with the signer (P12Signer or CryptoKeySigner).
+
+**Common causes**:
+- Invalid P12 password
+- Corrupted P12 file
+- Private key not available
+- Key doesn't match certificate
+
+```typescript
+import { P12Signer, SignerError } from "@libpdf/core";
+
+try {
+  const signer = await P12Signer.create(p12Bytes, "wrong-password");
+} catch (error) {
+  if (error instanceof SignerError) {
+    console.log("Invalid P12 or password");
+  }
+}
+```
+
+---
+
+### TimestampError
+
+**Extends**: `SignatureError`
+
+**Code**: `TIMESTAMP_ERROR`
+
+Timestamp server operation failed.
+
+**Common causes**:
+- Timestamp server unreachable
+- Invalid timestamp response
+- Server returned error status
+- Network timeout
+
+```typescript
+import { TimestampError } from "@libpdf/core";
+
+try {
+  await pdf.sign({
+    signer,
+    level: "B-T",
+    timestampServer: "http://timestamp.example.com",
+  });
+} catch (error) {
+  if (error instanceof TimestampError) {
+    console.log("Timestamp failed, try without timestamp");
+    await pdf.sign({ signer, level: "B-B" });
+  }
+}
+```
+
+---
+
+### RevocationError
+
+**Extends**: `SignatureError`
+
+**Code**: `REVOCATION_ERROR`
+
+Failed to fetch revocation data (OCSP or CRL).
+
+**Common causes**:
+- OCSP responder unreachable
+- CRL download failed
+- Invalid revocation response
+- Certificate revoked
+
+```typescript
+import { RevocationError } from "@libpdf/core";
+
+try {
+  await pdf.sign({ signer, level: "B-LT" });
+} catch (error) {
+  if (error instanceof RevocationError) {
+    console.log("Could not fetch revocation data");
+    // Fall back to basic signature
+    await pdf.sign({ signer, level: "B-B" });
+  }
+}
+```
+
+---
+
+### CertificateChainError
+
+**Extends**: `SignatureError`
+
+**Code**: `CERTIFICATE_CHAIN_ERROR`
+
+Problem with the certificate chain.
+
+**Common causes**:
+- Incomplete certificate chain
+- Certificate expired
+- Self-signed certificate (chain of 1)
+- AIA (Authority Information Access) fetch failed
+
+```typescript
+import { CertificateChainError } from "@libpdf/core";
+
+try {
+  await pdf.sign({ signer, level: "B-LT" });
+} catch (error) {
+  if (error instanceof CertificateChainError) {
+    console.log("Certificate chain issue:", error.message);
+  }
+}
+```
+
+---
+
+### PlaceholderError
+
+**Extends**: `SignatureError`
+
+**Code**: `PLACEHOLDER_TOO_SMALL`
+
+Signature placeholder is too small for the signature data.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `requiredSize` | `number` | Bytes needed |
+| `availableSize` | `number` | Bytes available |
+
+This error typically indicates an internal issue. Contact support if you encounter it.
+
+```typescript
+import { PlaceholderError } from "@libpdf/core";
+
+try {
+  await pdf.sign({ signer });
+} catch (error) {
+  if (error instanceof PlaceholderError) {
+    console.log(`Need ${error.requiredSize} bytes, have ${error.availableSize}`);
+  }
+}
+```
+
+---
+
+## Error Handling Patterns
+
+### Graceful Degradation
+
+```typescript
+import { TimestampError, RevocationError } from "@libpdf/core";
+
+async function signWithFallback(pdf: PDF, signer: Signer) {
+  // Try B-LTA (best)
+  try {
+    return await pdf.sign({
+      signer,
+      level: "B-LTA",
+      timestampServer: "http://timestamp.example.com",
+    });
+  } catch (error) {
+    if (error instanceof TimestampError || error instanceof RevocationError) {
+      console.warn("LTV not available, falling back to B-B");
+    } else {
+      throw error;
+    }
+  }
+
+  // Fall back to B-B (basic)
+  return await pdf.sign({ signer, level: "B-B" });
+}
+```
+
+### Type Guards
+
+```typescript
+import { SecurityError, SignatureError } from "@libpdf/core";
+
+function isSecurityError(error: unknown): error is SecurityError {
+  return error instanceof SecurityError;
+}
+
+function isSignatureError(error: unknown): error is SignatureError {
+  return error instanceof SignatureError;
+}
+
+try {
+  await somePdfOperation();
+} catch (error) {
+  if (isSecurityError(error)) {
+    // Handle security issues
+  } else if (isSignatureError(error)) {
+    // Handle signature issues
+  } else {
+    throw error; // Unexpected error
+  }
+}
+```
+
+### Retry Pattern
+
+```typescript
+import { SecurityError } from "@libpdf/core";
+
+async function loadWithRetry(bytes: Uint8Array, password?: string) {
+  try {
+    return await PDF.load(bytes, { credentials: password });
+  } catch (error) {
+    if (error instanceof SecurityError && error.name === "UnsupportedEncryptionError") {
+      const code = (error as { code?: string }).code;
+      if (code === "NEED_CREDENTIALS" && !password) {
+        const userPassword = await promptForPassword();
+        return await PDF.load(bytes, { credentials: userPassword });
+      }
+      if (code === "INVALID_CREDENTIALS") {
+        throw new Error("Wrong password");
+      }
+    }
+    throw error;
+  }
+}
+```
+
+---
+
+## Error Hierarchy
+
+**Bold** = exported from `@libpdf/core`, *italic* = internal (use `error.name` to identify)
+
+```
+Error
+├── *RecoverableParseError*
+│   ├── *XRefParseError*
+│   ├── *ObjectParseError*
+│   ├── *StreamDecodeError*
+│   └── *StructureError*
+├── *UnrecoverableParseError*
+├── SecurityError
+│   ├── PermissionDeniedError
+│   ├── *UnsupportedEncryptionError*
+│   ├── *AuthenticationError*
+│   ├── *DecryptionError*
+│   └── *EncryptionDictError*
+└── SignatureError
+    ├── SignerError
+    ├── TimestampError
+    ├── RevocationError
+    ├── CertificateChainError
+    └── PlaceholderError
+```

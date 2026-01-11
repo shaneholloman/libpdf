@@ -1,0 +1,382 @@
+---
+title: Object Model
+description: Learn about PdfDict, PdfArray, PdfRef, and other PDF object types in LibPDF.
+---
+
+# Object Model
+
+Every piece of data in a PDF is an **object**. LibPDF represents these objects as TypeScript classes that you can inspect and manipulate.
+
+## PDF Object Types
+
+PDF defines eight primitive types plus references:
+
+| PDF Type | TypeScript Class | PDF Syntax | Example |
+|----------|------------------|------------|---------|
+| Boolean | `boolean` | `true` / `false` | `true` |
+| Integer | `number` | `42` | `42` |
+| Real | `number` | `3.14` | `3.14` |
+| String | `PdfString` | `(Hello)` or `<48656C6C6F>` | `(Hello World)` |
+| Name | `PdfName` | `/Type` | `/Page` |
+| Array | `PdfArray` | `[1 2 3]` | `[0 0 612 792]` |
+| Dictionary | `PdfDict` | `<< /Key /Value >>` | `<< /Type /Page >>` |
+| Stream | `PdfStream` | dictionary + binary data | Page content, images |
+| Null | `null` | `null` | `null` |
+| Reference | `PdfRef` | `1 0 R` | `5 0 R` |
+
+## Working with Objects
+
+### PdfDict (Dictionary)
+
+Dictionaries are key-value maps, the most common structure in PDFs. Every page, font, and image is a dictionary.
+
+```typescript
+import { PdfDict, PdfName, PdfNumber, PdfString } from "@libpdf/core";
+
+// Create a dictionary
+const dict = PdfDict.of({
+  Type: PdfName.of("Page"),
+  MediaBox: new PdfArray([
+    PdfNumber.of(0),
+    PdfNumber.of(0),
+    PdfNumber.of(612),
+    PdfNumber.of(792),
+  ]),
+});
+
+// Read values with typed getters
+const type = dict.getName("Type");        // PdfName | undefined
+const box = dict.getArray("MediaBox");    // PdfArray | undefined
+const count = dict.getNumber("Count");    // PdfNumber | undefined
+const title = dict.getString("Title");    // PdfString | undefined
+const ref = dict.getRef("Pages");         // PdfRef | undefined
+
+// Generic get (returns PdfObject | undefined)
+const value = dict.get("SomeKey");
+
+// Check existence
+if (dict.has("Resources")) {
+  // ...
+}
+
+// Set values
+dict.set("NewKey", PdfString.fromString("value"));
+
+// Delete keys
+dict.delete("OldKey");
+
+// Iterate
+for (const [name, value] of dict) {
+  console.log(`${name.value}: ${value.type}`);
+}
+```
+
+### PdfArray
+
+Arrays are ordered collections of objects.
+
+```typescript
+import { PdfArray, PdfNumber } from "@libpdf/core";
+
+// Create an array
+const arr = PdfArray.of(
+  PdfNumber.of(0),
+  PdfNumber.of(0),
+  PdfNumber.of(612),
+  PdfNumber.of(792),
+);
+
+// Access by index
+const first = arr.at(0);     // PdfObject | undefined
+const count = arr.length;    // number
+
+// Add items
+arr.push(PdfNumber.of(100));
+
+// Insert at index
+arr.insert(0, PdfNumber.of(-10));
+
+// Iterate
+for (let i = 0; i < arr.length; i++) {
+  const item = arr.at(i);
+  console.log(item?.type);
+}
+```
+
+### PdfRef (Reference)
+
+References point to indirect objects by number:
+
+```typescript
+import { PdfRef } from "@libpdf/core";
+
+// Create a reference
+const ref = PdfRef.of(5, 0); // Object 5, generation 0
+
+// References are value objects
+ref.objectNumber; // 5
+ref.generation;   // 0
+
+// Compare references (interned, so use ===)
+const same = PdfRef.of(5, 0);
+ref === same; // true (same instance due to interning)
+
+// Resolve a reference to get the actual object
+const obj = await pdf.context.resolve(ref);
+```
+
+### PdfName
+
+Names are atomic symbols used as dictionary keys and type identifiers:
+
+```typescript
+import { PdfName } from "@libpdf/core";
+
+// Create a name
+const name = PdfName.of("Type");
+
+// Common predefined names
+PdfName.Page;       // /Page
+PdfName.Type;       // /Type
+PdfName.Catalog;    // /Catalog
+
+// Get the string value
+name.value; // "Type"
+```
+
+### PdfString
+
+Strings hold text data. PDF has two encodings:
+
+```typescript
+import { PdfString } from "@libpdf/core";
+
+// From a JavaScript string (auto-encodes)
+const str = PdfString.fromString("Hello, World!");
+
+// From raw bytes
+const bytes = new Uint8Array([0x48, 0x65, 0x6C, 0x6C, 0x6F]);
+const str2 = PdfString.fromBytes(bytes);
+
+// Get as JavaScript string
+str.asString(); // "Hello, World!"
+
+// Get raw bytes
+str.toBytes(writer); // ByteWriter
+```
+
+### PdfNumber
+
+Numbers can be integers or reals:
+
+```typescript
+import { PdfNumber } from "@libpdf/core";
+
+const int = PdfNumber.of(42);
+const real = PdfNumber.of(3.14159);
+
+int.value;  // 42
+real.value; // 3.14159
+```
+
+### PdfStream
+
+Streams combine a dictionary with binary data (used for page content, images, fonts):
+
+```typescript
+import { PdfStream, PdfDict, PdfName, PdfNumber } from "@libpdf/core";
+
+// Create a stream
+const stream = PdfStream.fromDict(
+  {
+    Type: PdfName.of("XObject"),
+    Subtype: PdfName.of("Image"),
+    Width: PdfNumber.of(100),
+    Height: PdfNumber.of(100),
+  },
+  imageBytes,
+);
+
+// Access the dictionary
+const dict = stream.dict;
+
+// Get decoded data (decompresses if filtered)
+const data = await stream.getDecodedData();
+
+// Get raw (possibly compressed) data
+const raw = stream.data;
+```
+
+## Indirect Objects
+
+Most objects in a PDF are **indirect objects**-stored with an ID and accessed via references.
+
+```
+5 0 obj
+<< /Type /Page /MediaBox [0 0 612 792] >>
+endobj
+```
+
+The `5 0` is the object number and generation. Other objects reference this as `5 0 R`.
+
+### Why Indirect Objects?
+
+1. **Sharing**: Multiple pages can reference the same font
+2. **Lazy loading**: Only parse objects when needed
+3. **Updates**: Replace objects without rewriting the file
+
+### Working with References
+
+```typescript
+// Page dictionaries contain references
+const page = await pdf.getPage(0);
+const contentsRef = page.dict.getRef("Contents");
+
+if (contentsRef) {
+  // Resolve to get the actual stream
+  const contents = await pdf.context.resolve(contentsRef);
+  
+  if (contents instanceof PdfStream) {
+    const data = await contents.getDecodedData();
+    console.log(new TextDecoder().decode(data));
+  }
+}
+```
+
+### Registering New Objects
+
+When creating new objects, register them to get a reference:
+
+```typescript
+const newDict = PdfDict.of({
+  Type: PdfName.of("XObject"),
+  Subtype: PdfName.of("Form"),
+});
+
+// Register returns a reference
+const ref = pdf.context.registry.register(newDict);
+
+// Now you can use this reference elsewhere
+page.dict.set("MyXObject", ref);
+```
+
+## Type Checking
+
+Check object types at runtime:
+
+```typescript
+import { 
+  PdfDict, PdfArray, PdfStream, PdfString, 
+  PdfName, PdfNumber, PdfRef 
+} from "@libpdf/core";
+
+const obj = dict.get("SomeKey");
+
+if (obj instanceof PdfDict) {
+  // It's a dictionary
+  const type = obj.getName("Type");
+}
+
+if (obj instanceof PdfArray) {
+  // It's an array
+  const first = obj.at(0);
+}
+
+if (obj instanceof PdfStream) {
+  // It's a stream (has binary data)
+  const data = await obj.getDecodedData();
+}
+
+if (obj instanceof PdfRef) {
+  // It's a reference (needs resolving)
+  const resolved = await pdf.context.resolve(obj);
+}
+
+// Use the type property
+if (obj?.type === "dict") { ... }
+if (obj?.type === "array") { ... }
+if (obj?.type === "stream") { ... }
+if (obj?.type === "ref") { ... }
+if (obj?.type === "name") { ... }
+if (obj?.type === "string") { ... }
+if (obj?.type === "number") { ... }
+```
+
+## Common Object Patterns
+
+### Page Dictionary
+
+```typescript
+{
+  Type: /Page,
+  Parent: 2 0 R,           // Reference to page tree
+  MediaBox: [0 0 612 792], // Page dimensions
+  Contents: 5 0 R,         // Page content stream
+  Resources: {
+    Font: { F1: 6 0 R },
+    XObject: { Im1: 7 0 R },
+  },
+}
+```
+
+### Font Dictionary
+
+```typescript
+{
+  Type: /Font,
+  Subtype: /Type1,
+  BaseFont: /Helvetica,
+  Encoding: /WinAnsiEncoding,
+}
+```
+
+### Image XObject
+
+```typescript
+{
+  Type: /XObject,
+  Subtype: /Image,
+  Width: 100,
+  Height: 100,
+  ColorSpace: /DeviceRGB,
+  BitsPerComponent: 8,
+  Filter: /DCTDecode,  // JPEG compression
+  // ... stream contains image data
+}
+```
+
+## Low-Level Access
+
+For advanced use cases, access the object registry directly:
+
+```typescript
+const pdf = await PDF.load(bytes);
+
+// Get the registry
+const registry = pdf.context.registry;
+
+// Resolve any reference
+const obj = await registry.resolve(PdfRef.of(5, 0));
+
+// Get object synchronously (if already loaded)
+const cached = registry.getObject(PdfRef.of(5, 0));
+```
+
+**Warning**: Low-level APIs may change between minor versions. Prefer high-level APIs when possible.
+
+## Summary
+
+| Class | Use Case |
+|-------|----------|
+| `PdfDict` | Structured data (pages, fonts, forms) |
+| `PdfArray` | Ordered lists (MediaBox, colors) |
+| `PdfStream` | Binary data with metadata (content, images) |
+| `PdfRef` | Pointers to indirect objects |
+| `PdfName` | Dictionary keys, type identifiers |
+| `PdfString` | Text values |
+| `PdfNumber` | Numeric values |
+
+Understanding the object model helps you:
+- Debug PDF issues by inspecting raw structures
+- Build custom features using low-level APIs
+- Understand why certain operations work the way they do

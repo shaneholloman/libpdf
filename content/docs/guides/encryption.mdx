@@ -1,0 +1,337 @@
+---
+title: Encryption
+description: Encrypt and decrypt PDFs with passwords and permissions.
+---
+
+# Encryption
+
+This guide covers encrypting PDFs with passwords and setting access permissions.
+
+## Encryption Support
+
+LibPDF supports all standard PDF encryption methods:
+
+| Algorithm | Key Length | Read | Write |
+|-----------|------------|------|-------|
+| RC4 | 40-bit | Yes | Yes |
+| RC4 | 128-bit | Yes | Yes |
+| AES | 128-bit | Yes | Yes |
+| AES | 256-bit | Yes | Yes |
+
+AES-256 is recommended for new documents.
+
+## Open Encrypted PDFs
+
+### With Password
+
+```ts
+const pdf = await PDF.load(bytes, {
+  credentials: "secret"
+});
+```
+
+Both user and owner passwords work. The owner password grants full access regardless of permission restrictions.
+
+### Check If Encrypted
+
+```ts
+const pdf = await PDF.load(bytes);
+
+if (pdf.isEncrypted && !pdf.isAuthenticated) {
+  console.log("Password required");
+}
+```
+
+### Without Decrypting
+
+To load an encrypted PDF without decrypting (for inspection only):
+
+```ts
+// Load without providing credentials
+const pdf = await PDF.load(bytes);
+
+// Can check encryption status
+console.log(pdf.isEncrypted);        // true
+console.log(pdf.isAuthenticated);    // false - no password provided
+console.log(pdf.getPageCount());     // Structure is accessible
+```
+
+## Encrypt on Save
+
+### Simple Password Protection
+
+```ts
+pdf.setProtection({
+  userPassword: "reader-password",
+});
+
+await pdf.save();
+```
+
+Users need this password to open the document.
+
+### Owner and User Passwords
+
+```ts
+pdf.setProtection({
+  userPassword: "reader-password",
+  ownerPassword: "admin-password",
+});
+
+await pdf.save();
+```
+
+- **User password**: Required to open and view
+- **Owner password**: Grants full access, bypasses restrictions
+
+If you only set an owner password, the document opens without a password but restrictions apply.
+
+### Password-Free Restrictions
+
+```ts
+pdf.setProtection({
+  ownerPassword: "admin-password",
+  // No user password - opens freely but with restrictions
+  permissions: {
+    print: false,
+    copy: false,
+  },
+});
+
+await pdf.save();
+```
+
+## Permissions
+
+Control what users can do with the document:
+
+```ts
+pdf.setProtection({
+  userPassword: "secret",
+  ownerPassword: "admin",
+  permissions: {
+    print: true,            // Allow printing
+    printHighQuality: true, // High-resolution printing
+    copy: false,            // Deny text/image copying
+    modify: false,          // Deny content modification
+    annotate: true,         // Allow annotations
+    fillForms: true,        // Allow form filling
+    accessibility: true,    // Screen readers
+    assemble: false,        // Deny page manipulation
+  },
+});
+
+await pdf.save();
+```
+
+### Permission Defaults
+
+All permissions default to `true` if not specified:
+
+```ts
+// These are equivalent:
+pdf.setProtection({ userPassword: "secret" });
+
+pdf.setProtection({
+  userPassword: "secret",
+  permissions: {
+    print: true,
+    printHighQuality: true,
+    copy: true,
+    modify: true,
+    annotate: true,
+    fillForms: true,
+    accessibility: true,
+    assemble: true,
+  },
+});
+```
+
+## Encryption Algorithm
+
+Specify the encryption algorithm:
+
+```ts
+pdf.setProtection({
+  userPassword: "secret",
+  algorithm: "AES-256",  // Recommended
+});
+
+await pdf.save();
+```
+
+Options:
+- `"RC4-40"` - Legacy, weak (not recommended)
+- `"RC4-128"` - Legacy (not recommended)
+- `"AES-128"` - Good compatibility
+- `"AES-256"` - Best security (default)
+
+## Read Permissions
+
+Check what's allowed on an encrypted document:
+
+```ts
+const pdf = await PDF.load(bytes, { credentials: "secret" });
+
+if (pdf.isEncrypted) {
+  const permissions = pdf.getPermissions();
+  
+  console.log("Printing allowed:", permissions.print);
+  console.log("Copying allowed:", permissions.copy);
+  console.log("Modifying allowed:", permissions.modify);
+}
+```
+
+## Remove Encryption
+
+Decrypt a PDF by removing protection and saving:
+
+```ts
+// Open with owner password (required for full access)
+const pdf = await PDF.load(bytes, { credentials: "owner-password" });
+
+// Remove protection
+pdf.removeProtection();
+
+// Save without encryption
+await pdf.save();
+```
+
+## Change Password
+
+```ts
+const pdf = await PDF.load(bytes, { credentials: "old-owner-password" });
+
+pdf.setProtection({
+  userPassword: "new-password",
+  ownerPassword: "new-admin-password",
+});
+
+await pdf.save();
+```
+
+## Encrypt Existing Documents
+
+```ts
+// Load unencrypted PDF
+const pdf = await PDF.load(bytes);
+
+// Add protection
+pdf.setProtection({
+  userPassword: "secret",
+  algorithm: "AES-256",
+});
+
+// Save with encryption
+await pdf.save();
+```
+
+## Complete Example
+
+```ts
+import { writeFile } from "fs/promises";
+import { PDF } from "@libpdf/core";
+
+// Create a protected document
+const pdf = PDF.create();
+pdf.addPage({ size: "letter" });
+
+const page = await pdf.getPage(0);
+if (page) {
+  page.drawText("Confidential Information", {
+    x: 50,
+    y: 700,
+    size: 24,
+  });
+
+  page.drawText("This document is password protected.", {
+    x: 50,
+    y: 650,
+    size: 12,
+  });
+}
+
+// Add protection
+pdf.setProtection({
+  userPassword: "reader123",
+  ownerPassword: "admin456",
+  algorithm: "AES-256",
+  permissions: {
+    print: true,
+    copy: false,
+    modify: false,
+    annotate: false,
+  },
+});
+
+// Save with protection
+await writeFile("protected.pdf", await pdf.save());
+
+console.log("Created protected.pdf");
+console.log("User password: reader123");
+console.log("Owner password: admin456");
+```
+
+## Security Considerations
+
+### Password Strength
+
+PDF encryption security depends on password strength:
+
+- AES-256 is only as strong as the password
+- Use long, random passwords for sensitive documents
+- Consider a password manager for distribution
+
+### Permission Enforcement
+
+PDF permissions are **advisory**, not enforced by the file format:
+
+- Any software with the owner password can ignore restrictions
+- Some PDF readers don't enforce permissions
+- Don't rely on permissions for true security
+
+### Encryption Limitations
+
+- Encrypts content, not metadata (title, author visible)
+- File size slightly increases
+- Some features may not work with encryption
+
+## Error Handling
+
+```ts
+import { PDF, PermissionDeniedError } from "@libpdf/core";
+
+// Load and check authentication status
+const pdf = await PDF.load(bytes, { credentials: "password" });
+
+if (pdf.isEncrypted && !pdf.isAuthenticated) {
+  console.log("Password required or incorrect");
+}
+
+// Try to authenticate with a different password
+const result = pdf.authenticate("another-password");
+if (result.authenticated) {
+  console.log("Successfully authenticated");
+  console.log("Has owner access:", result.isOwner);
+}
+
+// Handle permission errors when modifying protected documents
+try {
+  pdf.removeProtection();
+} catch (error) {
+  if (error instanceof PermissionDeniedError) {
+    console.log("Requires owner access to remove protection");
+  }
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Digital Signatures" href="/docs/guides/signatures">
+    Add cryptographic signatures
+  </Card>
+  <Card title="Forms" href="/docs/guides/forms">
+    Protect form data
+  </Card>
+</Cards>

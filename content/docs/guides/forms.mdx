@@ -1,0 +1,336 @@
+---
+title: Working with Forms
+description: Read, fill, and flatten PDF form fields.
+---
+
+# Working with Forms
+
+This guide covers reading and filling AcroForm fields in PDFs.
+
+## Check for Forms
+
+```ts
+const form = await pdf.getForm();
+
+if (form && !form.isEmpty) {
+  console.log("This PDF has form fields");
+} else {
+  console.log("No form fields found");
+}
+```
+
+## List All Fields
+
+```ts
+const form = await pdf.getForm();
+if (!form) return;
+
+const fields = form.getFields();
+
+for (const field of fields) {
+  console.log({
+    name: field.name,
+    type: field.type,
+  });
+}
+```
+
+Field types:
+- `text` - Text input
+- `checkbox` - Checkbox
+- `radio` - Radio button group
+- `dropdown` - Dropdown/combobox
+- `listbox` - List selection
+- `signature` - Signature field
+- `button` - Push button
+
+## Fill Forms
+
+### Bulk Fill
+
+Fill multiple fields at once using field names:
+
+```ts
+const form = await pdf.getForm();
+if (!form) return;
+
+await form.fill({
+  "First Name": "John",
+  "Last Name": "Doe",
+  "Email": "john@example.com",
+  "Agree to Terms": true,
+  "Country": "United States",
+});
+
+await pdf.save();
+```
+
+### Individual Fields
+
+For more control, fill fields individually:
+
+```ts
+const form = await pdf.getForm();
+if (!form) return;
+
+// Text field
+const nameField = form.getTextField("First Name");
+await nameField?.setValue("John");
+
+// Checkbox
+const termsField = form.getCheckbox("Agree to Terms");
+await termsField?.check();
+
+// Radio button
+const genderField = form.getRadioGroup("Gender");
+await genderField?.setValue("Male");
+
+// Dropdown
+const countryField = form.getDropdown("Country");
+await countryField?.setValue("United States");
+```
+
+## Field Types
+
+### Text Fields
+
+```ts
+const field = form.getTextField("Full Name");
+if (!field) return;
+
+// Read value
+const currentValue = field.getValue();
+
+// Set value
+await field.setValue("John Doe");
+
+// Multi-line text
+await field.setValue("Line 1\nLine 2\nLine 3");
+
+// Clear
+await field.setValue("");
+```
+
+### Checkboxes
+
+```ts
+const field = form.getCheckbox("Newsletter");
+if (!field) return;
+
+// Read state
+const isChecked = field.isChecked();
+
+// Set state
+await field.check();
+await field.uncheck();
+```
+
+### Radio Buttons
+
+Radio buttons are grouped by name. Only one option in a group can be selected.
+
+```ts
+const field = form.getRadioGroup("Payment Method");
+if (!field) return;
+
+// Get available options
+const options = field.getOptions();
+console.log(options); // ["Credit Card", "PayPal", "Bank Transfer"]
+
+// Get selected option
+const selected = field.getValue();
+
+// Select an option
+await field.setValue("PayPal");
+
+// Clear selection (if allowed)
+await field.setValue(null);
+```
+
+### Dropdowns (Comboboxes)
+
+```ts
+const field = form.getDropdown("Country");
+if (!field) return;
+
+// Get available options
+const options = field.getOptions();
+
+// Get selected value
+const selected = field.getValue();
+
+// Select by value
+await field.setValue("US");
+
+// For editable dropdowns, set custom value
+if (field.isEditable) {
+  await field.setValue("Custom Value");
+}
+```
+
+### List Boxes
+
+```ts
+const field = form.getListBox("Interests");
+if (!field) return;
+
+// Get options
+const options = field.getOptions();
+
+// Get selected values (can be multiple)
+const selected = field.getValue(); // string[]
+
+// Select single value
+await field.setValue(["Technology"]);
+
+// Select multiple (if allowed)
+if (field.isMultiSelect) {
+  await field.setValue(["Technology", "Science", "Art"]);
+}
+```
+
+### Signature Fields
+
+See the [Digital Signatures](/docs/guides/signatures) guide for signing.
+
+```ts
+const field = form.getSignatureField("Signature");
+
+// Check if already signed
+if (field?.isSigned()) {
+  console.log("Document is signed");
+}
+```
+
+## Read-Only Fields
+
+Check if a field is read-only:
+
+```ts
+const field = form.getTextField("ID Number");
+
+if (field?.isReadOnly()) {
+  console.log("This field cannot be modified");
+}
+```
+
+## Required Fields
+
+Check if a field is marked as required:
+
+```ts
+const field = form.getTextField("Email");
+
+if (field?.isRequired()) {
+  console.log("This field is required");
+}
+```
+
+## Flatten Forms
+
+Flattening converts form fields to static content. The form data becomes part of the page content and can no longer be edited.
+
+```ts
+const form = await pdf.getForm();
+if (!form) return;
+
+// Fill first
+await form.fill({
+  "Name": "John Doe",
+  "Date": "2024-01-15",
+});
+
+// Then flatten
+await form.flatten();
+
+await pdf.save();
+```
+
+## Field Appearance
+
+Form fields have appearance streams that control how they look. When you set a value, the appearance is automatically updated.
+
+### Custom Fonts in Forms
+
+To use custom fonts in text fields:
+
+```ts
+const fontBytes = await readFile("fonts/OpenSans-Regular.ttf");
+const font = await pdf.embedFont(fontBytes);
+
+const field = form.getTextField("Name");
+if (field) {
+  field.setFont(font);
+  await field.setValue("John Doe");
+}
+```
+
+## Complete Example
+
+```ts
+import { readFile, writeFile } from "fs/promises";
+import { PDF } from "@libpdf/core";
+
+// Load form PDF
+const bytes = await readFile("application-form.pdf");
+const pdf = await PDF.load(bytes);
+
+const form = await pdf.getForm();
+if (!form) {
+  console.log("No form found");
+  return;
+}
+
+// Check what fields exist
+console.log("Form fields:");
+for (const field of form.getFields()) {
+  console.log(`  ${field.name} (${field.type})`);
+}
+
+// Fill the form
+await form.fill({
+  "applicant_name": "Jane Smith",
+  "applicant_email": "jane@example.com",
+  "application_date": new Date().toISOString().split("T")[0],
+  "agree_terms": true,
+  "preferred_contact": "Email",
+});
+
+// Save filled form
+await writeFile("filled-form.pdf", await pdf.save());
+
+// Or flatten and save
+await form.flatten();
+await writeFile("flattened-form.pdf", await pdf.save());
+```
+
+## Field Reference
+
+| Type | Get Method | Value Methods |
+|------|------------|---------------|
+| Text | `getTextField()` | `getValue()`, `setValue()` |
+| Checkbox | `getCheckbox()` | `isChecked()`, `check()`, `uncheck()` |
+| Radio | `getRadioGroup()` | `getValue()`, `setValue()`, `getOptions()` |
+| Dropdown | `getDropdown()` | `getValue()`, `setValue()`, `getOptions()` |
+| Listbox | `getListBox()` | `getValue()`, `setValue()`, `getOptions()` |
+| Signature | `getSignatureField()` | `isSigned()` |
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Field not found | Name mismatch | Check exact field names with `getFields()` |
+| Value not visible | Missing appearance | Ensure font is embedded |
+| Wrong font | Default font used | Embed and specify custom font |
+| Checkbox won't toggle | Read-only field | Check `isReadOnly()` |
+
+## Next Steps
+
+<Cards>
+  <Card title="Digital Signatures" href="/docs/guides/signatures">
+    Sign forms with digital signatures
+  </Card>
+  <Card title="Encryption" href="/docs/guides/encryption">
+    Protect filled forms with passwords
+  </Card>
+</Cards>

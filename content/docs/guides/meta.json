@@ -1,0 +1,10 @@
+{
+  "pages": [
+    "pages",
+    "text-extraction",
+    "forms",
+    "drawing",
+    "encryption",
+    "signatures"
+  ]
+}

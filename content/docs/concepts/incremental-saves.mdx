@@ -1,0 +1,317 @@
+---
+title: Incremental Saves
+description: Understand incremental updates in PDF and when to use them to preserve signatures.
+---
+
+# Incremental Saves
+
+PDFs support two save modes: **full rewrite** and **incremental update**. Understanding when to use each is essential for preserving digital signatures and maintaining document integrity.
+
+## How Incremental Saves Work
+
+When you make changes to a PDF, you have two options:
+
+### Full Rewrite (Default)
+
+The entire PDF is rebuilt from scratch:
+
+```
+[New PDF with all objects reorganized]
+%%EOF
+```
+
+**Advantages:**
+- Smaller file size (removes unused objects)
+- Clean structure
+- Removes document history
+
+**Disadvantages:**
+- Invalidates all existing signatures
+- Breaks certified documents
+- Loses incremental history
+
+### Incremental Update
+
+Changes are *appended* to the end of the file:
+
+```
+[Original PDF content untouched]
+[New/modified objects]
+[New xref table]
+[New trailer]
+%%EOF
+```
+
+**Advantages:**
+- Preserves existing signatures
+- Maintains document history
+- Faster for small changes
+
+**Disadvantages:**
+- File size grows with each update
+- Old content remains (larger file)
+
+## When to Use Incremental Saves
+
+### Preserve Existing Signatures
+
+Digital signatures cover specific byte ranges. If you rewrite the file, those bytes change and signatures become invalid.
+
+```typescript
+// Document with existing signature
+const pdf = await PDF.load(signedPdfBytes);
+
+// Make allowed changes (form filling, annotations)
+const form = await pdf.getForm();
+if (form) {
+  await form.fill({ name: "John Doe" });
+}
+
+// MUST use incremental to preserve signatures
+await pdf.save({ incremental: true });
+```
+
+### Add Additional Signatures
+
+When adding a new signature to an already-signed document:
+
+```typescript
+// First signature (incremental not required)
+const result1 = await pdf.sign({ signer: signer1 });
+// PDF instance is automatically reloaded after signing
+
+// Second signature MUST use incremental
+const result2 = await pdf.sign({ signer: signer2 });
+// sign() automatically uses incremental when signatures exist
+```
+
+### Certified Documents
+
+Certified PDFs specify what changes are allowed after certification. Incremental saves are required to maintain certification:
+
+```typescript
+const pdf = await PDF.load(certifiedBytes);
+
+// Check what changes are allowed
+const security = pdf.getSecurity();
+// certification level determines allowed modifications
+
+// Changes append incrementally
+await pdf.save({ incremental: true });
+```
+
+## When NOT to Use Incremental Saves
+
+### New Documents
+
+Documents you create don't have existing content to preserve:
+
+```typescript
+const pdf = PDF.create();
+pdf.addPage();
+
+// Full rewrite is fine (and smaller)
+await pdf.save(); // incremental: false by default
+```
+
+### Removing Encryption
+
+When removing security, you typically want a clean file:
+
+```typescript
+const pdf = await PDF.load(encryptedBytes, { credentials: "password" });
+pdf.removeProtection();
+
+// Full rewrite removes encryption cleanly
+await pdf.save(); // incremental: false
+```
+
+### Reducing File Size
+
+Incremental updates never remove data. For cleanup:
+
+```typescript
+// After many edits, file has grown
+const pdf = await PDF.load(largeFileBytes);
+
+// Full rewrite removes old versions
+await pdf.save(); // incremental: false
+
+// Warning: this invalidates any signatures!
+```
+
+## Automatic Incremental Detection
+
+LibPDF cannot automatically detect when incremental saves are required. You must explicitly request it:
+
+```typescript
+// Default: full rewrite
+await pdf.save();
+
+// Explicit incremental
+await pdf.save({ incremental: true });
+```
+
+The library will warn if incremental save isn't possible:
+
+```typescript
+// New documents can't use incremental
+const pdf = PDF.create();
+await pdf.save({ incremental: true });
+// Warning logged, performs full save instead (no error thrown)
+```
+
+## Technical Details
+
+### What Gets Appended
+
+An incremental update appends:
+
+1. **Modified objects**: Objects that changed since last save
+2. **New objects**: Objects created since last save
+3. **Cross-reference section**: Index of the appended objects
+4. **Trailer**: Points to previous xref and the root
+
+```
+trailer
+<< 
+  /Root 1 0 R 
+  /Prev 12345    ← Points to previous xref
+  /Size 50 
+>>
+startxref
+54321
+%%EOF
+```
+
+### Change Tracking
+
+The library tracks which objects have been modified:
+
+```typescript
+const pdf = await PDF.load(bytes);
+
+// Modify something
+pdf.setTitle("New Title");
+
+// The Info dictionary is now marked as changed
+// On incremental save, only Info is written
+await pdf.save({ incremental: true });
+```
+
+### Multiple Updates
+
+PDFs can have many incremental updates stacked:
+
+```
+[Original PDF]
+%%EOF
+[Update 1]
+%%EOF
+[Update 2]
+%%EOF
+[Update 3]
+%%EOF
+```
+
+Each update has its own xref pointing to the previous one. Readers follow the chain to build the complete object index.
+
+## Signature Preservation Details
+
+### Signature Byte Ranges
+
+A signature covers specific byte ranges:
+
+```typescript
+// Signature dictionary contains
+{
+  ByteRange: [0, 1000, 2000, 5000]
+}
+// Covers bytes 0-999 and 2000-6999
+// Gap at 1000-1999 is the signature value itself
+```
+
+### Why Full Rewrites Break Signatures
+
+A full rewrite:
+1. Reorganizes all objects
+2. Changes byte positions
+3. Updates xref offsets
+
+The bytes the signature covers no longer match, so verification fails.
+
+### Incremental Saves Preserve Signatures
+
+An incremental save:
+1. Keeps original bytes untouched
+2. Appends new content after `%%EOF`
+3. Signature byte ranges still valid
+
+## Best Practices
+
+### Check for Existing Signatures
+
+```typescript
+const pdf = await PDF.load(bytes);
+const form = await pdf.getForm();
+const sigFields = form?.getSignatureFields() ?? [];
+
+const hasSignatures = sigFields.some(f => f.isSigned());
+
+if (hasSignatures) {
+  // Must use incremental
+  await pdf.save({ incremental: true });
+} else {
+  // Can use either
+  await pdf.save();
+}
+```
+
+### Document Your Save Strategy
+
+```typescript
+async function savePdf(pdf: PDF, options: { preserveSignatures: boolean }) {
+  if (options.preserveSignatures) {
+    // Append changes, keeping signatures valid
+    return await pdf.save({ incremental: true });
+  } else {
+    // Full rewrite for clean, smaller file
+    // WARNING: Invalidates existing signatures
+    return await pdf.save();
+  }
+}
+```
+
+### Size vs. Integrity Trade-off
+
+```typescript
+// After many incremental edits
+const pdf = await PDF.load(bytes);
+
+// Check if signatures exist
+const form = await pdf.getForm();
+const hasSigs = form?.getSignatureFields().some(f => f.isSigned());
+
+if (hasSigs) {
+  // Can't compact without losing signatures
+  console.log("File has signatures, keeping incremental format");
+  await pdf.save({ incremental: true });
+} else {
+  // Safe to compact
+  console.log("No signatures, compacting file");
+  await pdf.save(); // Full rewrite
+}
+```
+
+## Summary
+
+| Scenario | Save Mode | Reason |
+|----------|-----------|--------|
+| Signed document, adding form data | Incremental | Preserve signatures |
+| Adding second signature | Incremental | Preserve first signature |
+| New document | Full rewrite | No history to preserve |
+| Removing encryption | Full rewrite | Clean file structure |
+| Reducing file size | Full rewrite | Remove old data |
+| Certified document modifications | Incremental | Maintain certification |
+
+**Rule of thumb**: If the document has signatures you want to keep, use `{ incremental: true }`.

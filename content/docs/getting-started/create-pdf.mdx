@@ -1,0 +1,296 @@
+---
+title: Create a PDF
+description: Generate PDF documents from scratch with text, images, and shapes.
+---
+
+# Create a PDF
+
+This guide shows you how to create new PDF documents from scratch.
+
+## Create an Empty Document
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const pdf = PDF.create();
+```
+
+## Add Pages
+
+### Default Size (Letter)
+
+```ts
+const page = pdf.addPage();
+```
+
+### Specific Size
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const pdf = PDF.create();
+
+// Using predefined sizes
+const a4Page = pdf.addPage({ size: "a4" });
+const legalPage = pdf.addPage({ size: "legal" });
+
+// Custom size in points (1 inch = 72 points)
+const customPage = pdf.addPage({ 
+  width: 400, 
+  height: 600,
+});
+```
+
+Available predefined sizes:
+
+| Size | Dimensions (points) |
+|------|---------------------|
+| `"letter"` | 612 × 792 |
+| `"a4"` | 595 × 842 |
+| `"legal"` | 612 × 1008 |
+
+### Landscape Orientation
+
+Use the `orientation` option:
+
+```ts
+const landscape = pdf.addPage({
+  size: "letter",
+  orientation: "landscape",
+});
+```
+
+## Draw Text
+
+```ts
+page.drawText("Hello, World!", {
+  x: 50,
+  y: 700,
+  size: 24,
+});
+```
+
+### Text Options
+
+```ts
+import { rgb } from "@libpdf/core";
+
+page.drawText("Styled Text", {
+  x: 50,
+  y: 650,
+  size: 16,
+  color: rgb(0.2, 0.4, 0.8),  // Blue
+  lineHeight: 1.5,
+  maxWidth: 200,              // Word wrap
+});
+```
+
+### Custom Fonts
+
+```ts
+import { readFile } from "fs/promises";
+
+// Embed a TTF or OTF font
+const fontBytes = await readFile("fonts/OpenSans-Regular.ttf");
+const font = pdf.embedFont(fontBytes);
+
+page.drawText("Custom Font", {
+  x: 50,
+  y: 600,
+  size: 14,
+  font,
+});
+```
+
+## Draw Shapes
+
+### Rectangle
+
+```ts
+import { rgb } from "@libpdf/core";
+
+page.drawRectangle({
+  x: 50,
+  y: 500,
+  width: 200,
+  height: 100,
+  color: rgb(0.9, 0.9, 0.9),      // Fill color
+  borderColor: rgb(0, 0, 0),      // Stroke color
+  borderWidth: 1,
+});
+```
+
+### Circle
+
+```ts
+page.drawCircle({
+  x: 150,   // Center X
+  y: 400,   // Center Y
+  radius: 50,
+  color: rgb(1, 0.8, 0.8),
+  borderColor: rgb(0.8, 0, 0),
+  borderWidth: 2,
+});
+```
+
+### Line
+
+```ts
+page.drawLine({
+  start: { x: 50, y: 300 },
+  end: { x: 250, y: 350 },
+  color: rgb(0, 0, 0),
+  thickness: 1,
+});
+```
+
+## Embed Images
+
+### JPEG
+
+```ts
+const jpegBytes = await readFile("photo.jpg");
+const image = await pdf.embedJpeg(jpegBytes);
+
+page.drawImage(image, {
+  x: 50,
+  y: 100,
+  width: 200,
+  height: 150,
+});
+```
+
+### PNG (with transparency)
+
+```ts
+const pngBytes = await readFile("logo.png");
+const image = await pdf.embedPng(pngBytes);
+
+page.drawImage(image, {
+  x: 300,
+  y: 100,
+  width: 100,
+  height: 100,
+});
+```
+
+### Preserve Aspect Ratio
+
+```ts
+// Scale to fit within bounds while preserving aspect ratio
+page.drawImage(image, {
+  x: 50,
+  y: 100,
+  width: 200,
+  // height is calculated automatically
+});
+```
+
+## Set Metadata
+
+```ts
+pdf.setTitle("My Document");
+pdf.setAuthor("John Doe");
+pdf.setSubject("Example PDF");
+pdf.setKeywords(["example", "tutorial"]);
+pdf.setCreator("My App");
+```
+
+## Save the PDF
+
+```ts
+const bytes = await pdf.save();
+```
+
+### Save to File (Node.js / Bun)
+
+```ts
+import { writeFile } from "fs/promises";
+
+const bytes = await pdf.save();
+await writeFile("output.pdf", bytes);
+```
+
+### Download in Browser
+
+```ts
+const bytes = await pdf.save();
+const blob = new Blob([bytes], { type: "application/pdf" });
+const url = URL.createObjectURL(blob);
+
+const link = document.createElement("a");
+link.href = url;
+link.download = "document.pdf";
+link.click();
+
+URL.revokeObjectURL(url);
+```
+
+## Complete Example
+
+```ts
+import { readFile, writeFile } from "fs/promises";
+import { PDF, rgb } from "@libpdf/core";
+
+// Create document
+const pdf = PDF.create();
+pdf.setTitle("Invoice #1234");
+
+// Add page
+const page = pdf.addPage({ size: "a4" });
+
+// Header
+page.drawText("INVOICE", {
+  x: 50,
+  y: 780,
+  size: 32,
+  color: rgb(0.2, 0.2, 0.2),
+});
+
+page.drawText("Invoice #1234", {
+  x: 50,
+  y: 740,
+  size: 14,
+});
+
+// Line separator
+page.drawLine({
+  start: { x: 50, y: 720 },
+  end: { x: 545, y: 720 },
+  color: rgb(0.8, 0.8, 0.8),
+  thickness: 1,
+});
+
+// Content
+page.drawText("Description: Professional Services", {
+  x: 50,
+  y: 680,
+  size: 12,
+});
+
+page.drawText("Amount: $1,500.00", {
+  x: 50,
+  y: 660,
+  size: 12,
+});
+
+// Save
+const bytes = await pdf.save();
+await writeFile("invoice.pdf", bytes);
+
+console.log("Created invoice.pdf");
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Drawing Guide" href="/docs/guides/drawing">
+    Advanced drawing techniques
+  </Card>
+  <Card title="Fonts" href="/docs/guides/fonts">
+    Font embedding and subsetting
+  </Card>
+  <Card title="Images" href="/docs/guides/images">
+    Image formats and optimization
+  </Card>
+</Cards>

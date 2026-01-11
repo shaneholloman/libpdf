@@ -1,0 +1,425 @@
+---
+title: Drawing
+description: Draw text, shapes, and images on PDF pages.
+---
+
+# Drawing
+
+This guide covers drawing operations on PDF pages.
+
+## Coordinate System
+
+PDF uses a coordinate system where:
+- **Origin (0, 0)** is at the **bottom-left** corner
+- **X** increases going **right**
+- **Y** increases going **up**
+- Units are **points** (1 inch = 72 points)
+
+```
+(0, 792) ─────────────── (612, 792)
+    │                         │
+    │     US Letter Page      │
+    │                         │
+(0, 0) ─────────────────  (612, 0)
+```
+
+## Colors
+
+Import the color helpers:
+
+```ts
+import { rgb, cmyk, grayscale } from "@libpdf/core";
+
+// RGB (values 0-1)
+const red = rgb(1, 0, 0);
+const blue = rgb(0, 0, 1);
+const custom = rgb(0.2, 0.4, 0.8);
+
+// CMYK (values 0-1)
+const processBlack = cmyk(0, 0, 0, 1);
+
+// Grayscale (0 = black, 1 = white)
+const gray = grayscale(0.5);
+const black = grayscale(0);
+const white = grayscale(1);
+```
+
+## Draw Text
+
+### Basic Text
+
+```ts
+page.drawText("Hello, World!", {
+  x: 50,
+  y: 700,
+  size: 24,
+});
+```
+
+### Text Options
+
+```ts
+page.drawText("Styled Text", {
+  x: 50,
+  y: 650,
+  size: 16,
+  color: rgb(0.2, 0.4, 0.8),
+  font: customFont,           // Embedded font
+  lineHeight: 24,             // Line height in points
+  maxWidth: 200,              // Word wrap width
+  opacity: 0.8,               // 0-1
+});
+```
+
+### Multi-line Text
+
+```ts
+page.drawText("Line 1\nLine 2\nLine 3", {
+  x: 50,
+  y: 600,
+  size: 12,
+  lineHeight: 18,  // Line height in points
+});
+```
+
+### Word Wrap
+
+```ts
+const longText = "This is a very long paragraph that will automatically wrap to fit within the specified maximum width.";
+
+page.drawText(longText, {
+  x: 50,
+  y: 550,
+  size: 12,
+  maxWidth: 200,  // Wrap at 200 points
+  lineHeight: 16, // Line height in points
+});
+```
+
+### Text with Custom Fonts
+
+```ts
+const fontBytes = await readFile("fonts/OpenSans-Regular.ttf");
+const font = pdf.embedFont(fontBytes);  // Synchronous
+
+page.drawText("Custom Font", {
+  x: 50,
+  y: 500,
+  size: 14,
+  font,
+});
+```
+
+## Draw Shapes
+
+### Rectangle
+
+```ts
+// Filled rectangle
+page.drawRectangle({
+  x: 50,
+  y: 400,
+  width: 200,
+  height: 100,
+  color: rgb(0.9, 0.9, 0.9),
+});
+
+// Outlined rectangle
+page.drawRectangle({
+  x: 50,
+  y: 280,
+  width: 200,
+  height: 100,
+  borderColor: rgb(0, 0, 0),
+  borderWidth: 2,
+});
+
+// Filled with border
+page.drawRectangle({
+  x: 300,
+  y: 400,
+  width: 200,
+  height: 100,
+  color: rgb(1, 0.9, 0.9),
+  borderColor: rgb(0.8, 0, 0),
+  borderWidth: 1,
+});
+```
+
+### Rounded Rectangle
+
+```ts
+page.drawRectangle({
+  x: 50,
+  y: 150,
+  width: 200,
+  height: 100,
+  color: rgb(0.9, 0.95, 1),
+  borderColor: rgb(0.3, 0.5, 0.8),
+  borderWidth: 1,
+  cornerRadius: 10,
+});
+```
+
+### Circle
+
+```ts
+page.drawCircle({
+  x: 150,      // Center X
+  y: 500,      // Center Y
+  radius: 50,
+  color: rgb(0.8, 0.9, 1),
+  borderColor: rgb(0, 0.3, 0.6),
+  borderWidth: 2,
+});
+```
+
+### Ellipse
+
+```ts
+page.drawEllipse({
+  x: 150,      // Center X
+  y: 400,      // Center Y
+  xRadius: 80,
+  yRadius: 40,
+  color: rgb(1, 0.9, 0.8),
+  borderColor: rgb(0.6, 0.3, 0),
+  borderWidth: 1,
+});
+```
+
+### Line
+
+```ts
+page.drawLine({
+  start: { x: 50, y: 300 },
+  end: { x: 250, y: 350 },
+  color: rgb(0, 0, 0),
+  thickness: 1,
+});
+
+// Dashed line
+page.drawLine({
+  start: { x: 50, y: 280 },
+  end: { x: 250, y: 280 },
+  color: rgb(0.5, 0.5, 0.5),
+  thickness: 1,
+  dashArray: [5, 3],  // 5pt dash, 3pt gap
+});
+```
+
+## Draw Images
+
+### Embed and Draw
+
+```ts
+// JPEG
+const jpegBytes = await readFile("photo.jpg");
+const jpegImage = await pdf.embedJpeg(jpegBytes);
+
+page.drawImage(jpegImage, {
+  x: 50,
+  y: 100,
+  width: 200,
+  height: 150,
+});
+
+// PNG (with transparency support)
+const pngBytes = await readFile("logo.png");
+const pngImage = await pdf.embedPng(pngBytes);
+
+page.drawImage(pngImage, {
+  x: 300,
+  y: 100,
+  width: 100,
+  height: 100,
+});
+```
+
+### Preserve Aspect Ratio
+
+```ts
+// Specify only width - height calculated automatically
+page.drawImage(image, {
+  x: 50,
+  y: 100,
+  width: 200,
+});
+
+// Or only height
+page.drawImage(image, {
+  x: 50,
+  y: 100,
+  height: 150,
+});
+```
+
+### Image Opacity
+
+```ts
+page.drawImage(image, {
+  x: 50,
+  y: 100,
+  width: 200,
+  height: 150,
+  opacity: 0.5,
+});
+```
+
+## Custom Paths
+
+For complex shapes, use the path builder:
+
+```ts
+// Triangle using the fluent path API
+page.drawPath()
+  .moveTo(100, 100)
+  .lineTo(150, 200)
+  .lineTo(50, 200)
+  .close()
+  .fillAndStroke({
+    color: rgb(0.8, 0.2, 0.2),
+    borderColor: rgb(0.4, 0, 0),
+    borderWidth: 2,
+  });
+```
+
+### Curves
+
+```ts
+// Quadratic curve (converted to cubic internally)
+page.drawPath()
+  .moveTo(50, 300)
+  .quadraticCurveTo(100, 400, 150, 300)  // Control point, end point
+  .stroke({ borderColor: rgb(0, 0, 0), borderWidth: 2 });
+
+// Cubic bezier curve
+page.drawPath()
+  .moveTo(200, 300)
+  .curveTo(225, 200, 275, 400, 300, 300)  // Two control points, end point
+  .stroke({ borderColor: rgb(0, 0, 0), borderWidth: 2 });
+```
+
+## Drawing Order
+
+Content is drawn in order - later drawings appear on top:
+
+```ts
+// Background first
+page.drawRectangle({
+  x: 0, y: 0,
+  width: 612, height: 792,
+  color: rgb(0.95, 0.95, 0.95),
+});
+
+// Then content
+page.drawText("On top of background", {
+  x: 50,
+  y: 700,
+  size: 16,
+});
+```
+
+## Draw on Existing Pages
+
+```ts
+const pdf = await PDF.load(existingBytes);
+const page = await pdf.getPage(0);
+
+// Add watermark
+page.drawText("CONFIDENTIAL", {
+  x: 200,
+  y: 400,
+  size: 60,
+  color: rgb(1, 0, 0),
+  opacity: 0.3,
+});
+
+const bytes = await pdf.save();
+```
+
+## Transformations
+
+### Rotation
+
+Rotate content using the `rotate` option:
+
+```ts
+import { degrees } from "@libpdf/core";
+
+// Rotate text around its position
+page.drawText("Rotated Text", {
+  x: 280,
+  y: 400,
+  size: 14,
+  rotate: degrees(45),  // 45 degrees counter-clockwise
+});
+```
+
+## Complete Example
+
+```ts
+import { writeFile } from "fs/promises";
+import { PDF, rgb } from "@libpdf/core";
+
+const pdf = PDF.create();
+const page = pdf.addPage({ size: "a4" });
+const { width, height } = page;
+
+// Background
+page.drawRectangle({
+  x: 0, y: 0,
+  width, height,
+  color: rgb(0.98, 0.98, 1),
+});
+
+// Header bar
+page.drawRectangle({
+  x: 0, y: height - 60,
+  width, height: 60,
+  color: rgb(0.2, 0.4, 0.8),
+});
+
+page.drawText("Document Title", {
+  x: 50,
+  y: height - 40,
+  size: 24,
+  color: rgb(1, 1, 1),
+});
+
+// Content
+page.drawText("Section 1", {
+  x: 50,
+  y: height - 120,
+  size: 18,
+  color: rgb(0.2, 0.2, 0.2),
+});
+
+page.drawLine({
+  start: { x: 50, y: height - 130 },
+  end: { x: width - 50, y: height - 130 },
+  color: rgb(0.8, 0.8, 0.8),
+  thickness: 1,
+});
+
+page.drawText("Lorem ipsum dolor sit amet, consectetur adipiscing elit.", {
+  x: 50,
+  y: height - 160,
+  size: 12,
+  maxWidth: width - 100,
+  lineHeight: 18,
+});
+
+await writeFile("styled-document.pdf", await pdf.save());
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Fonts" href="/docs/guides/fonts">
+    Embed and subset fonts
+  </Card>
+  <Card title="Images" href="/docs/guides/images">
+    Image formats and optimization
+  </Card>
+</Cards>

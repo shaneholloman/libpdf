@@ -1,0 +1,755 @@
+---
+title: PDFForm
+description: Form class for reading, filling, creating, and flattening interactive form fields.
+---
+
+# PDFForm
+
+The `PDFForm` class manages interactive forms (AcroForms) in a PDF document. It provides methods for reading, filling, creating, and flattening form fields.
+
+```typescript
+const pdf = await PDF.load(bytes);
+const form = await pdf.getForm();
+
+if (form) {
+  await form.fill({
+    name: "John Doe",
+    email: "john@example.com",
+    agree: true,
+  });
+}
+```
+
+## Properties
+
+### fieldCount
+
+Number of fields in the form.
+
+**Type**: `number` (readonly)
+
+---
+
+### isEmpty
+
+Whether the form has no fields.
+
+**Type**: `boolean` (readonly)
+
+---
+
+### hasUnsavedChanges
+
+Whether any field has been modified and needs appearance update.
+
+**Type**: `boolean` (readonly)
+
+---
+
+### properties
+
+Form-level properties.
+
+**Type**: `FormProperties` (readonly)
+
+```typescript
+interface FormProperties {
+  defaultAppearance: string;
+  defaultAlignment: TextAlignment;
+  needAppearances: boolean;
+  hasSignatures: boolean;
+  isAppendOnly: boolean;
+}
+```
+
+---
+
+## Field Access
+
+### getFields()
+
+Get all form fields.
+
+**Returns**: `FormField[]`
+
+```typescript
+const fields = form.getFields();
+for (const field of fields) {
+  console.log(`${field.name}: ${field.type}`);
+}
+```
+
+---
+
+### getFieldNames()
+
+Get the names of all fields.
+
+**Returns**: `string[]`
+
+```typescript
+const names = form.getFieldNames();
+// ["name", "email", "phone", "agree"]
+```
+
+---
+
+### getField(name)
+
+Get a field by name (untyped).
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Field name |
+
+**Returns**: `FormField | undefined`
+
+```typescript
+const field = form.getField("name");
+if (field?.type === "text") {
+  console.log(field.getValue());
+}
+```
+
+---
+
+### hasField(name)
+
+Check if a field exists.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Field name |
+
+**Returns**: `boolean`
+
+---
+
+## Type-Safe Field Access
+
+These methods return properly typed fields, or `undefined` if not found or wrong type.
+
+### getTextField(name)
+
+Get a text field by name.
+
+**Returns**: `TextField | undefined`
+
+```typescript
+const nameField = form.getTextField("name");
+if (nameField) {
+  await nameField.setValue("John Doe");
+  console.log(nameField.getValue());
+}
+```
+
+---
+
+### getCheckbox(name)
+
+Get a checkbox field by name.
+
+**Returns**: `CheckboxField | undefined`
+
+```typescript
+const agree = form.getCheckbox("terms");
+if (agree) {
+  await agree.check();
+  console.log(agree.isChecked()); // true
+}
+```
+
+---
+
+### getRadioGroup(name)
+
+Get a radio button group by name.
+
+**Returns**: `RadioField | undefined`
+
+```typescript
+const payment = form.getRadioGroup("payment_method");
+if (payment) {
+  await payment.setValue("credit_card");
+  console.log(payment.getOptions()); // ["credit_card", "paypal", "bank"]
+}
+```
+
+---
+
+### getDropdown(name)
+
+Get a dropdown (combo box) field by name.
+
+**Returns**: `DropdownField | undefined`
+
+```typescript
+const country = form.getDropdown("country");
+if (country) {
+  await country.setValue("United States");
+  const options = country.getOptions();
+  // options: [{ value: "USA", display: "United States" }, ...]
+}
+```
+
+---
+
+### getListBox(name)
+
+Get a list box field by name.
+
+**Returns**: `ListBoxField | undefined`
+
+```typescript
+const colors = form.getListBox("favorite_colors");
+if (colors) {
+  await colors.setValue(["red", "blue"]);
+}
+```
+
+---
+
+### getSignatureField(name)
+
+Get a signature field by name.
+
+**Returns**: `SignatureField | undefined`
+
+```typescript
+const sig = form.getSignatureField("signature1");
+if (sig) {
+  console.log(sig.isSigned());
+}
+```
+
+---
+
+### getButton(name)
+
+Get a button field by name.
+
+**Returns**: `ButtonField | undefined`
+
+---
+
+## Bulk Field Access
+
+### getTextFields()
+
+Get all text fields.
+
+**Returns**: `TextField[]`
+
+---
+
+### getCheckboxes()
+
+Get all checkboxes.
+
+**Returns**: `CheckboxField[]`
+
+---
+
+### getRadioGroups()
+
+Get all radio button groups.
+
+**Returns**: `RadioField[]`
+
+---
+
+### getDropdowns()
+
+Get all dropdowns.
+
+**Returns**: `DropdownField[]`
+
+---
+
+### getListBoxes()
+
+Get all list boxes.
+
+**Returns**: `ListBoxField[]`
+
+---
+
+### getSignatureFields()
+
+Get all signature fields.
+
+**Returns**: `SignatureField[]`
+
+---
+
+### getButtons()
+
+Get all buttons.
+
+**Returns**: `ButtonField[]`
+
+---
+
+## Bulk Operations
+
+### fill(values)
+
+Fill multiple fields at once.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `values` | `Record<string, FieldValue>` | Field names to values |
+
+**Returns**: `Promise<{ filled: string[], skipped: string[] }>`
+
+**Throws**: `TypeError` - If a value type doesn't match the field type
+
+This method is **lenient**: fields that don't exist are silently skipped.
+
+```typescript
+const result = await form.fill({
+  name: "John Doe",
+  email: "john@example.com",
+  agree: true,           // checkbox
+  country: "USA",        // dropdown
+  colors: ["red", "blue"], // listbox
+  nonexistent: "ignored",
+});
+
+console.log(result.filled);  // ["name", "email", "agree", "country", "colors"]
+console.log(result.skipped); // ["nonexistent"]
+```
+
+**FieldValue Types**:
+
+| Field Type | Value Type |
+|------------|------------|
+| Text | `string` |
+| Checkbox | `boolean` or `string` |
+| Radio | `string` or `null` |
+| Dropdown | `string` |
+| Listbox | `string[]` |
+
+---
+
+### resetAll()
+
+Reset all fields to their default values.
+
+```typescript
+await form.resetAll();
+```
+
+---
+
+## Field Creation
+
+### createTextField(name, options?)
+
+Create a new text field.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `[options]` | `TextFieldOptions` | | |
+| `[options.font]` | `EmbeddedFont` | | Font for text |
+| `[options.fontSize]` | `number` | `0` (auto) | Font size |
+| `[options.color]` | `Color` | black | Text color |
+| `[options.maxLength]` | `number` | | Max characters |
+| `[options.multiline]` | `boolean` | `false` | Multiline input |
+| `[options.password]` | `boolean` | `false` | Mask input |
+| `[options.comb]` | `boolean` | `false` | Fixed-width cells |
+| `[options.alignment]` | `TextAlignment` | `Left` | Text alignment |
+| `[options.defaultValue]` | `string` | | Default value |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+
+**Returns**: `TextField`
+
+**Throws**: `Error` - If field name already exists
+
+```typescript
+const nameField = form.createTextField("name", {
+  fontSize: 12,
+  maxLength: 100,
+  defaultValue: "John Doe",
+});
+
+// Place on page
+await page.drawField(nameField, {
+  x: 100,
+  y: 700,
+  width: 200,
+  height: 24,
+});
+```
+
+---
+
+### createCheckbox(name, options?)
+
+Create a new checkbox field.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `[options]` | `CheckboxOptions` | | |
+| `[options.onValue]` | `string` | `"Yes"` | Value when checked |
+| `[options.symbol]` | `CheckboxSymbol` | `"check"` | Symbol style |
+| `[options.defaultChecked]` | `boolean` | `false` | Initially checked |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+
+**Returns**: `CheckboxField`
+
+**CheckboxSymbol**: `"check"` | `"cross"` | `"square"`
+
+```typescript
+const agree = form.createCheckbox("agree", {
+  onValue: "Yes",
+  symbol: "check",
+  defaultChecked: true,
+});
+
+await page.drawField(agree, {
+  x: 100,
+  y: 650,
+  width: 18,
+  height: 18,
+});
+```
+
+---
+
+### createRadioGroup(name, options)
+
+Create a new radio button group.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `options` | `RadioGroupOptions` | required | |
+| `options.options` | `string[]` | required | Available values |
+| `[options.symbol]` | `RadioSymbol` | `"circle"` | Symbol style |
+| `[options.defaultValue]` | `string` | | Initially selected |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+
+**Returns**: `RadioField`
+
+**Throws**:
+- `Error` - If field name already exists
+- `Error` - If options array is empty
+
+**RadioSymbol**: `"circle"` | `"check"`
+
+```typescript
+const payment = form.createRadioGroup("payment", {
+  options: ["Credit Card", "PayPal", "Bank Transfer"],
+  defaultValue: "Credit Card",
+});
+
+// Each option needs its own widget
+await page.drawField(payment, {
+  x: 100,
+  y: 550,
+  width: 16,
+  height: 16,
+  option: "Credit Card",
+});
+await page.drawField(payment, {
+  x: 100,
+  y: 520,
+  width: 16,
+  height: 16,
+  option: "PayPal",
+});
+await page.drawField(payment, {
+  x: 100,
+  y: 490,
+  width: 16,
+  height: 16,
+  option: "Bank Transfer",
+});
+```
+
+---
+
+### createDropdown(name, options)
+
+Create a new dropdown (combo box) field.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `options` | `DropdownOptions` | required | |
+| `options.options` | `string[]` | required | Available values |
+| `[options.font]` | `EmbeddedFont` | | Font for text |
+| `[options.fontSize]` | `number` | | Font size |
+| `[options.color]` | `Color` | | Text color |
+| `[options.editable]` | `boolean` | `false` | Allow custom input |
+| `[options.defaultValue]` | `string` | | Initially selected |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+
+**Returns**: `DropdownField`
+
+**Throws**: `Error` - If options array is empty
+
+```typescript
+const country = form.createDropdown("country", {
+  options: ["USA", "Canada", "UK", "Germany"],
+  defaultValue: "USA",
+  fontSize: 11,
+});
+
+await page.drawField(country, {
+  x: 100,
+  y: 600,
+  width: 200,
+  height: 24,
+});
+```
+
+---
+
+### createListbox(name, options)
+
+Create a new list box field.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `options` | `ListboxOptions` | required | |
+| `options.options` | `string[]` | required | Available values |
+| `[options.font]` | `EmbeddedFont` | | Font for text |
+| `[options.fontSize]` | `number` | | Font size |
+| `[options.color]` | `Color` | | Text color |
+| `[options.multiSelect]` | `boolean` | `false` | Allow multiple selection |
+| `[options.defaultValue]` | `string[]` | | Initially selected |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+
+**Returns**: `ListBoxField`
+
+**Throws**: `Error` - If options array is empty
+
+```typescript
+const colors = form.createListbox("colors", {
+  options: ["Red", "Green", "Blue", "Yellow"],
+  multiSelect: true,
+  defaultValue: ["Red", "Blue"],
+});
+
+await page.drawField(colors, {
+  x: 100,
+  y: 400,
+  width: 150,
+  height: 100,
+});
+```
+
+---
+
+### createSignatureField(name, options?)
+
+Create a new signature field.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | required | Unique field name |
+| `[options]` | `SignatureFieldOptions` | | |
+| `[options.backgroundColor]` | `Color` | | Background |
+| `[options.borderColor]` | `Color` | | Border |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+
+**Returns**: `SignatureField`
+
+```typescript
+const sigField = form.createSignatureField("Signature1");
+// Sign later via pdf.sign({ fieldName: "Signature1", ... })
+```
+
+---
+
+## Form Operations
+
+### updateAppearances()
+
+Regenerate appearance streams for all modified fields.
+
+```typescript
+await form.updateAppearances();
+```
+
+---
+
+### flatten(options?)
+
+Flatten all form fields into static page content.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `[options]` | `FlattenOptions` | | |
+
+After flattening:
+- Field appearances become static page content
+- Widget annotations are removed
+- The form can no longer be edited
+
+```typescript
+await form.fill({ name: "John", email: "john@example.com" });
+await form.flatten();
+const bytes = await pdf.save();
+```
+
+---
+
+### reloadFields()
+
+Reload fields from the underlying AcroForm.
+
+Call this if the form structure has been modified externally.
+
+```typescript
+await form.reloadFields();
+```
+
+---
+
+### acroForm()
+
+Get the underlying AcroForm for low-level operations.
+
+**Returns**: `AcroForm`
+
+```typescript
+const acroForm = form.acroForm();
+console.log(acroForm.defaultAppearance);
+```
+
+---
+
+## Field Types
+
+### TextField
+
+| Method/Property | Returns | Description |
+|-----------------|---------|-------------|
+| `getValue()` | `string` | Get current value |
+| `setValue(value)` | `Promise<void>` | Set value |
+| `maxLength` | `number` | Max length (0 = no limit) |
+| `isMultiline` | `boolean` | Whether multiline |
+| `setFont(font)` | `void` | Set font |
+| `setFontSize(size)` | `void` | Set font size |
+| `setTextColor(r, g, b)` | `void` | Set text color |
+
+---
+
+### CheckboxField
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `isChecked()` | `boolean` | Check state |
+| `check()` | `Promise<void>` | Check the box |
+| `uncheck()` | `Promise<void>` | Uncheck the box |
+| `setValue(value)` | `Promise<void>` | Set by value string |
+| `getOnValue()` | `string` | Get the "on" value |
+
+---
+
+### RadioField
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getValue()` | `string \| null` | Get selected option |
+| `setValue(value)` | `Promise<void>` | Select option |
+| `getOptions()` | `string[]` | Get available options |
+
+---
+
+### DropdownField
+
+| Method/Property | Returns | Description |
+|-----------------|---------|-------------|
+| `getValue()` | `string` | Get selected value |
+| `setValue(value)` | `Promise<void>` | Select value |
+| `getOptions()` | `ChoiceOption[]` | Get available options |
+| `isEditable` | `boolean` | Whether editable |
+| `setFont(font)` | `void` | Set font |
+| `setFontSize(size)` | `void` | Set font size |
+
+---
+
+### ListBoxField
+
+| Method/Property | Returns | Description |
+|-----------------|---------|-------------|
+| `getValue()` | `string[]` | Get selected values |
+| `setValue(values)` | `Promise<void>` | Set selected values |
+| `getOptions()` | `ChoiceOption[]` | Get available options |
+| `isMultiSelect` | `boolean` | Whether multi-select |
+| `setFont(font)` | `void` | Set font |
+| `setFontSize(size)` | `void` | Set font size |
+
+---
+
+### SignatureField
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `isSigned()` | `boolean` | Check if signed |
+
+---
+
+## Types
+
+### TextAlignment
+
+```typescript
+const TextAlignment = {
+  Left: 0,
+  Center: 1,
+  Right: 2,
+} as const;
+
+type TextAlignment = 0 | 1 | 2;
+```
+
+### FieldValue
+
+```typescript
+type FieldValue = string | boolean | string[] | null;
+```
+
+### ChoiceOption
+
+```typescript
+interface ChoiceOption {
+  value: string;   // Export value
+  display: string; // Display text (may equal value)
+}
+```
+
+### FormField
+
+```typescript
+interface FormField {
+  name: string;
+  type: FieldType;
+  isReadOnly(): boolean;
+  isRequired(): boolean;
+}
+
+type FieldType = 
+  | "text"
+  | "checkbox"
+  | "radio"
+  | "dropdown"
+  | "listbox"
+  | "signature"
+  | "button";
+```

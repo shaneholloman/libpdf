@@ -1,0 +1,20 @@
+{
+  "title": "Docs",
+  "root": true,
+  "pages": [
+    "index",
+    "acknowledgements",
+    "---Getting Started---",
+    "...getting-started",
+    "---Guides---",
+    "...guides",
+    "---Concepts---",
+    "...concepts",
+    "---Advanced---",
+    "...advanced",
+    "---Migration---",
+    "...migration",
+    "---API Reference---",
+    "...api"
+  ]
+}

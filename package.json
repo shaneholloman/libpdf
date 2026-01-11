@@ -34,6 +34,8 @@
     "format": "biome format --write .",
     "examples": "bun run examples/run-all.ts",
     "examples:quiet": "bun run examples/run-all.ts --quiet",
+    "docs:dev": "bun run --cwd apps/docs dev",
+    "docs:build": "bun run --cwd apps/docs build",
     "prepublishOnly": "bun run build",
     "prepare": "husky"
   },

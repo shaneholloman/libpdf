@@ -1,0 +1,76 @@
+---
+title: Introduction
+description: A modern PDF library for TypeScript - parsing, generation, forms, encryption, and digital signatures.
+---
+
+# LibPDF
+
+A modern PDF library for TypeScript focused on both parsing and generation.
+
+<Callout type="warn" title="Beta Software">
+LibPDF is under active development. We don't have plans to introduce breaking changes, but we're still experimenting to make sure this becomes the best PDF library for TypeScript. APIs may evolve as we refine the developer experience.
+</Callout>
+
+## Why?
+
+The JavaScript ecosystem's PDF landscape is fragmented:
+
+- **pdf.js** (Mozilla) - excellent parsing/rendering, but focused on browser viewing, not manipulation
+- **pdf-lib** - great for generation and basic manipulation, but parsing is limited
+- **pdfkit** - generation only, no parsing
+
+**LibPDF** fills that gap with a single, comprehensive library that handles parsing, generation, forms, encryption, and digital signatures.
+
+## Quick Example
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const pdf = await PDF.load(bytes);
+console.log(`${pdf.getPageCount()} pages`);
+
+const page = await pdf.getPage(0);
+const text = await page.extractText();
+```
+
+## Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| PDF 1.0–1.7 | Full | Read and write |
+| PDF 2.0 | Read | Write planned |
+| Encrypted PDFs | Full | RC4, AES-128, AES-256 |
+| AcroForms | Full | Read, fill, flatten |
+| Digital Signatures | Sign | PAdES B-B through B-LTA |
+| Text Extraction | Full | With positions and search |
+| Font Embedding | Full | TTF/OTF with subsetting |
+| Incremental Saves | Full | Preserves existing signatures |
+
+## Installation
+
+```bash
+npm install @libpdf/core
+```
+
+Works with Node.js 18+, Bun, and browsers. No polyfills required.
+
+## What's Next?
+
+<Cards>
+  <Card title="Installation" href="/docs/getting-started/installation">
+    Setup for Node.js, Bun, and browsers
+  </Card>
+  <Card title="Parse a PDF" href="/docs/getting-started/parse-pdf">
+    Load, inspect, and extract text from existing PDFs
+  </Card>
+  <Card title="Create a PDF" href="/docs/getting-started/create-pdf">
+    Generate PDFs from scratch with text, images, and shapes
+  </Card>
+</Cards>
+
+## Known Limitations
+
+- **Predefined CJK CMaps**: Only Identity-H and Identity-V CMaps are supported. Legacy CJK PDFs using predefined CMaps without ToUnicode maps may not extract text correctly.
+- **Signature Verification**: Signing works; verification is not yet implemented.
+- **XFA Forms**: Data extraction only; XFA rendering is not supported.
+- **Annotations**: Read/write/flatten support is planned but not yet implemented.

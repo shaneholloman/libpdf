@@ -1,0 +1,42 @@
+---
+title: Acknowledgements
+description: Standing on the shoulders of giants - the projects and standards that made LibPDF possible.
+---
+
+# Acknowledgements
+
+LibPDF wouldn't exist without the incredible work of those who came before us. We're deeply grateful to the following projects and organizations.
+
+## Documenso
+
+LibPDF was created by [Documenso](https://documenso.com), the open source DocuSign alternative. After years of wrestling with the limitations of existing PDF libraries - inconsistent parsing, missing features, and the inability to properly handle incremental updates for digital signatures - we decided enough was enough.
+
+We built LibPDF to be the PDF library we always wished existed: comprehensive, reliable, and truly open source.
+
+## Open Source Projects
+
+### PDF.js (Mozilla)
+
+Mozilla's [PDF.js](https://github.com/mozilla/pdf.js) is the gold standard for PDF parsing in JavaScript. Its battle-tested parsing strategies, handling of malformed PDFs, and recovery mechanisms have been invaluable references. PDF.js showed us what robust, production-grade PDF parsing looks like.
+
+### pdf-lib
+
+[pdf-lib](https://github.com/Hopding/pdf-lib) pioneered the modern TypeScript API for PDF manipulation. Its clean, intuitive interface for PDF generation set the bar for developer experience. We've drawn heavily from its API patterns while extending support for parsing and incremental updates.
+
+### Apache PDFBox
+
+[PDFBox](https://pdfbox.apache.org/) is a comprehensive Java library that handles virtually every PDF feature imaginable. Its thorough coverage of edge cases, brute-force recovery strategies, and extensive font handling have been essential references. When we needed to understand how to handle an obscure PDF feature, PDFBox usually had the answer.
+
+## Standards
+
+### PDF Specification (ISO 32000)
+
+The PDF specification, now maintained as [ISO 32000](https://www.iso.org/standard/75839.html), is the definitive reference for everything PDF. Adobe's decision to publish the PDF 1.7 specification openly, and the subsequent ISO standardization, made it possible for open source PDF libraries to exist at all. We're grateful for this commitment to open standards.
+
+## Community
+
+Thank you to everyone who has filed issues, contributed fixes, and helped improve this library. Open source thrives on community participation.
+
+---
+
+If you'd like to contribute to LibPDF, check out our [GitHub repository](https://github.com/libpdf/core).

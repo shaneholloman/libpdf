@@ -1,0 +1,204 @@
+---
+title: Parse a PDF
+description: Load, inspect, and extract content from existing PDF documents.
+---
+
+# Parse a PDF
+
+This guide shows you how to load existing PDFs and extract information from them.
+
+## Load a PDF
+
+Pass a `Uint8Array` containing the PDF bytes to `PDF.load()`:
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const pdf = await PDF.load(bytes);
+```
+
+### From a File (Node.js / Bun)
+
+```ts
+import { readFile } from "fs/promises";
+import { PDF } from "@libpdf/core";
+
+const bytes = await readFile("document.pdf");
+const pdf = await PDF.load(bytes);
+```
+
+### From a URL (Browser)
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const response = await fetch("/document.pdf");
+const bytes = new Uint8Array(await response.arrayBuffer());
+const pdf = await PDF.load(bytes);
+```
+
+### Encrypted PDFs
+
+If the PDF is password-protected, provide the password:
+
+```ts
+const pdf = await PDF.load(bytes, {
+  credentials: "secret"
+});
+```
+
+Both user and owner passwords work. If you provide the owner password, you get full access to the document regardless of permission restrictions.
+
+## Inspect the Document
+
+### Page Count
+
+```ts
+console.log(pdf.getPageCount()); // e.g., 5
+```
+
+### Metadata
+
+```ts
+console.log(pdf.getTitle());    // "Annual Report 2024"
+console.log(pdf.getAuthor());   // "John Doe"
+console.log(pdf.getSubject());  // "Financial Results"
+console.log(pdf.getKeywords()); // ["finance", "quarterly"]
+console.log(pdf.getCreator());  // "Microsoft Word"
+console.log(pdf.getProducer()); // "@libpdf/core"
+```
+
+### Page Dimensions
+
+```ts
+const page = await pdf.getPage(0); // Zero-indexed
+const { width, height } = page;
+
+console.log(`${width} x ${height} points`);
+// e.g., "612 x 792 points" for US Letter
+```
+
+Common page sizes in points:
+
+| Size | Width | Height |
+|------|-------|--------|
+| Letter | 612 | 792 |
+| A4 | 595 | 842 |
+| Legal | 612 | 1008 |
+
+### Rotation
+
+```ts
+const rotation = page.rotation; // 0, 90, 180, or 270
+```
+
+## Extract Text
+
+### Simple Extraction
+
+Get all text from a page as a single string:
+
+```ts
+const page = await pdf.getPage(0);
+const pageText = await page.extractText();
+
+console.log(pageText.text);
+```
+
+### Text with Positions
+
+Get text lines with their coordinates for more advanced processing:
+
+```ts
+const pageText = await page.extractText();
+
+for (const line of pageText.lines) {
+  console.log(`"${line.text}" at (${line.bbox.x}, ${line.bbox.y})`);
+}
+```
+
+Each line includes:
+- `text` - the text content
+- `bbox` - bounding box with `x`, `y`, `width`, `height`
+- `spans` - individual text spans with font information
+
+### Search Text
+
+Find text matching a pattern:
+
+```ts
+// String search
+const results = await page.findText("invoice");
+
+// Regex search
+const invoiceNumbers = await page.findText(/INV-\d{6}/g);
+
+for (const match of results) {
+  console.log(`Found "${match.text}" at`, match.bbox);
+}
+```
+
+## Iterate Over Pages
+
+```ts
+const pages = await pdf.getPages();
+
+for (const page of pages) {
+  const pageText = await page.extractText();
+  console.log(`Page ${page.index + 1}: ${pageText.text.slice(0, 100)}...`);
+}
+```
+
+## Check for Forms
+
+```ts
+const form = await pdf.getForm();
+
+if (form && !form.isEmpty) {
+  const fields = form.getFields();
+  console.log(`Found ${fields.length} form fields`);
+}
+```
+
+See the [Forms Guide](/docs/guides/forms) for working with form fields.
+
+## Check Encryption Status
+
+```ts
+if (pdf.isEncrypted) {
+  console.log("Document is encrypted");
+  console.log("Permissions:", pdf.getPermissions());
+}
+```
+
+## Error Handling
+
+```ts
+import { PDF, SecurityError } from "@libpdf/core";
+
+try {
+  const pdf = await PDF.load(bytes);
+} catch (error) {
+  if (error instanceof SecurityError) {
+    console.log("Password required or incorrect");
+  } else if (error instanceof Error) {
+    console.log("Invalid or corrupted PDF:", error.message);
+  } else {
+    throw error;
+  }
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Create a PDF" href="/docs/getting-started/create-pdf">
+    Generate PDFs from scratch
+  </Card>
+  <Card title="Text Extraction" href="/docs/guides/text-extraction">
+    Advanced text extraction techniques
+  </Card>
+  <Card title="Forms" href="/docs/guides/forms">
+    Read and fill form fields
+  </Card>
+</Cards>

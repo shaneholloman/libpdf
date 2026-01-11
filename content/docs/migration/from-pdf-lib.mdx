@@ -1,0 +1,506 @@
+---
+title: Migrating from pdf-lib
+description: Side-by-side comparison and migration guide for pdf-lib users.
+---
+
+# Migrating from pdf-lib
+
+LibPDF was designed with API familiarity in mind. If you're coming from pdf-lib, many concepts transfer directly. This guide highlights the differences and shows equivalent code patterns.
+
+## Quick Comparison
+
+| Feature | pdf-lib | LibPDF |
+|---------|---------|--------------|
+| Load PDF | `PDFDocument.load(bytes)` | `PDF.load(bytes)` |
+| Create PDF | `PDFDocument.create()` | `PDF.create()` |
+| Add page | `pdfDoc.addPage()` | `pdf.addPage()` |
+| Get page | `pdfDoc.getPage(0)` | `await pdf.getPage(0)` |
+| Draw text | `page.drawText()` | `page.drawText()` |
+| Embed font | `pdfDoc.embedFont()` | `pdf.embedFont()` |
+| Save | `pdfDoc.save()` | `pdf.save()` |
+| Text extraction | Not supported | `page.extractText()` |
+| Incremental saves | Not supported | `pdf.save({ incremental: true })` |
+| Digital signatures | Not supported | `pdf.sign({ signer })` |
+| Malformed PDFs | Strict (often fails) | Lenient by default |
+| Encrypted PDFs | Limited | Full support (R2-R6) |
+
+## Code Migration
+
+### Loading PDFs
+
+```typescript
+// pdf-lib
+import { PDFDocument } from "pdf-lib";
+const pdfDoc = await PDFDocument.load(bytes);
+
+// LibPDF
+import { PDF } from "@libpdf/core";
+const pdf = await PDF.load(bytes);
+```
+
+### Creating PDFs
+
+```typescript
+// pdf-lib
+import { PDFDocument } from "pdf-lib";
+const pdfDoc = await PDFDocument.create();
+
+// LibPDF
+import { PDF } from "@libpdf/core";
+const pdf = PDF.create(); // Note: synchronous
+```
+
+### Adding Pages
+
+```typescript
+// pdf-lib
+const page = pdfDoc.addPage();
+const page = pdfDoc.addPage([612, 792]); // Custom size
+
+// LibPDF
+const page = pdf.addPage();
+const page = pdf.addPage({ width: 612, height: 792 });
+const page = pdf.addPage({ size: "letter" }); // Preset sizes
+```
+
+### Getting Pages
+
+```typescript
+// pdf-lib
+const pages = pdfDoc.getPages();
+const page = pdfDoc.getPage(0);
+const count = pdfDoc.getPageCount();
+
+// LibPDF
+const pages = await pdf.getPages(); // Note: async
+const page = await pdf.getPage(0); // Note: async
+const count = pdf.getPageCount(); // Sync
+```
+
+### Drawing Text
+
+```typescript
+// pdf-lib
+import { rgb } from "pdf-lib";
+page.drawText("Hello", {
+  x: 50,
+  y: 700,
+  size: 12,
+  color: rgb(0, 0, 0),
+});
+
+// LibPDF
+import { rgb } from "@libpdf/core";
+page.drawText("Hello", {
+  x: 50,
+  y: 700,
+  size: 12,
+  color: rgb(0, 0, 0),
+}); // Same API!
+```
+
+### Embedding Fonts
+
+```typescript
+// pdf-lib
+import { StandardFonts } from "pdf-lib";
+const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+const custom = await pdfDoc.embedFont(fontBytes);
+
+// LibPDF
+// Standard fonts work without embedding
+page.drawText("Hello", { font: "Helvetica" });
+
+// Custom fonts
+const custom = await pdf.embedFont(fontBytes);
+page.drawText("Hello", { font: custom });
+```
+
+### Drawing Shapes
+
+```typescript
+// pdf-lib
+page.drawRectangle({
+  x: 50,
+  y: 500,
+  width: 200,
+  height: 100,
+  color: rgb(1, 0, 0),
+  borderColor: rgb(0, 0, 0),
+  borderWidth: 2,
+});
+
+// LibPDF - identical API
+page.drawRectangle({
+  x: 50,
+  y: 500,
+  width: 200,
+  height: 100,
+  color: rgb(1, 0, 0),
+  borderColor: rgb(0, 0, 0),
+  borderWidth: 2,
+});
+```
+
+### Embedding Images
+
+```typescript
+// pdf-lib
+const image = await pdfDoc.embedPng(pngBytes);
+// or
+const image = await pdfDoc.embedJpg(jpgBytes);
+
+page.drawImage(image, {
+  x: 50,
+  y: 300,
+  width: 200,
+  height: 150,
+});
+
+// LibPDF - auto-detects format
+const image = await pdf.embedImage(imageBytes); // PNG or JPEG
+
+page.drawImage(image, {
+  x: 50,
+  y: 300,
+  width: 200,
+  height: 150,
+});
+```
+
+### Saving
+
+```typescript
+// pdf-lib
+const bytes = await pdfDoc.save();
+
+// LibPDF
+const bytes = await pdf.save();
+
+// With options
+const bytes = await pdf.save({
+  incremental: true,  // NEW: preserve signatures
+  subsetFonts: true,  // Subset embedded fonts
+});
+```
+
+### Copying Pages
+
+```typescript
+// pdf-lib
+const [page] = await pdfDoc.copyPages(srcPdf, [0]);
+pdfDoc.addPage(page);
+
+// LibPDF
+const pages = await pdf.copyPagesFrom(srcPdf, [0]);
+// Pages are automatically added
+```
+
+### Merging PDFs
+
+```typescript
+// pdf-lib
+const merged = await PDFDocument.create();
+for (const bytes of pdfBytesList) {
+  const src = await PDFDocument.load(bytes);
+  const pages = await merged.copyPages(src, src.getPageIndices());
+  for (const page of pages) {
+    merged.addPage(page);
+  }
+}
+
+// LibPDF - one line
+const merged = await PDF.merge(pdfBytesList);
+```
+
+### Working with Forms
+
+```typescript
+// pdf-lib
+const form = pdfDoc.getForm();
+const field = form.getTextField("name");
+field.setText("John Doe");
+
+const checkbox = form.getCheckBox("agree");
+checkbox.check();
+
+// LibPDF
+const form = await pdf.getForm();
+const field = form?.getTextField("name");
+await field?.setValue("John Doe");
+
+const checkbox = form?.getCheckbox("agree");
+await checkbox?.check();
+
+// Bulk fill (new feature)
+await form?.fill({
+  name: "John Doe",
+  email: "john@example.com",
+  agree: true,
+});
+```
+
+### Metadata
+
+```typescript
+// pdf-lib
+pdfDoc.setTitle("My Document");
+pdfDoc.setAuthor("Jane Doe");
+const title = pdfDoc.getTitle();
+
+// LibPDF - identical API
+pdf.setTitle("My Document");
+pdf.setAuthor("Jane Doe");
+const title = pdf.getTitle();
+
+// Bulk get/set (new feature)
+const metadata = pdf.getMetadata();
+pdf.setMetadata({
+  title: "My Document",
+  author: "Jane Doe",
+  creationDate: new Date(),
+});
+```
+
+## New Features in LibPDF
+
+### Text Extraction
+
+```typescript
+// Not available in pdf-lib
+
+// LibPDF
+const page = await pdf.getPage(0);
+const result = await page.extractText();
+
+console.log(result.text); // Plain text
+
+// With position information
+for (const line of result.lines) {
+  console.log(`Line at y=${line.baseline}: "${line.text}"`);
+}
+```
+
+### Text Search
+
+```typescript
+// Not available in pdf-lib
+
+// LibPDF
+const matches = await page.findText("invoice");
+for (const match of matches) {
+  console.log(`Found at:`, match.bbox);
+}
+
+// Regex support
+const placeholders = await page.findText(/\{\{.*?\}\}/g);
+```
+
+### Digital Signatures
+
+```typescript
+// Not available in pdf-lib
+
+// LibPDF
+import { P12Signer } from "@libpdf/core";
+
+const signer = await P12Signer.create(p12Bytes, "password");
+const result = await pdf.sign({
+  signer,
+  level: "B-LTA",
+  timestampServer: "http://timestamp.example.com",
+});
+```
+
+### Incremental Saves
+
+```typescript
+// Not available in pdf-lib
+
+// LibPDF
+// Preserve existing signatures when saving
+await pdf.save({ incremental: true });
+```
+
+### Encryption
+
+```typescript
+// pdf-lib - limited support
+
+// LibPDF - full encryption support
+// Load encrypted PDF
+const pdf = await PDF.load(bytes, { credentials: "password" });
+
+// Add encryption
+pdf.setProtection({
+  userPassword: "user",
+  ownerPassword: "owner",
+  permissions: { copy: false, print: true },
+  algorithm: "AES-256",
+});
+
+// Remove encryption
+pdf.removeProtection();
+```
+
+### Lenient Parsing
+
+```typescript
+// pdf-lib - often fails on malformed PDFs
+
+// LibPDF - lenient by default
+const pdf = await PDF.load(malformedBytes);
+
+// Check if recovery was needed
+if (pdf.recoveredViaBruteForce) {
+  console.log("Document was recovered from malformed state");
+}
+
+// Strict mode if needed
+const pdf = await PDF.load(bytes, { lenient: false });
+```
+
+## Key Differences
+
+### Async vs Sync
+
+Some operations that were sync in pdf-lib are async in LibPDF:
+
+| Operation | pdf-lib | LibPDF |
+|-----------|---------|--------|
+| `getPage(0)` | sync | **async** |
+| `getPages()` | sync | **async** |
+| `getForm()` | sync | **async** |
+| `create()` | async | **sync** |
+
+This is because LibPDF uses lazy loading for better memory efficiency with large documents.
+
+### Form Field Mutations
+
+Setting field values is async in LibPDF:
+
+```typescript
+// pdf-lib - sync
+field.setText("value");
+
+// LibPDF - async
+await field.setValue("value");
+```
+
+### Standard Fonts
+
+```typescript
+// pdf-lib - must embed
+const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+page.drawText("Hello", { font });
+
+// LibPDF - use by name
+page.drawText("Hello", { font: "Helvetica" });
+
+// Or embed for custom fonts
+const custom = await pdf.embedFont(customFontBytes);
+page.drawText("Hello", { font: custom });
+```
+
+### Color Functions
+
+Both libraries use similar color helpers:
+
+```typescript
+// Both libraries
+import { rgb, grayscale, cmyk } from "pdf-lib"; // or @libpdf/core
+
+const red = rgb(1, 0, 0);
+const gray = grayscale(0.5);
+const cyan = cmyk(1, 0, 0, 0);
+```
+
+## Migration Checklist
+
+1. **Update imports**
+   - Change `pdf-lib` to `@libpdf/core`
+   - `PDFDocument` becomes `PDF`
+
+2. **Add async/await**
+   - `getPage()` and `getPages()` are now async
+   - `getForm()` is now async
+   - Form field mutations are async
+
+3. **Update form field methods**
+   - `setText()` becomes `setValue()`
+   - `getText()` becomes `getValue()`
+   - Add `await` to mutations
+
+4. **Simplify standard fonts**
+   - Remove font embedding for Standard 14 fonts
+   - Pass font name string directly
+
+5. **Consider new features**
+   - Text extraction where needed
+   - Incremental saves for signed documents
+   - Digital signatures if required
+
+## Example: Full Migration
+
+### Before (pdf-lib)
+
+```typescript
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+
+async function createInvoice(data: InvoiceData) {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const page = pdfDoc.addPage([612, 792]);
+  
+  page.drawText("INVOICE", {
+    x: 50,
+    y: 750,
+    size: 24,
+    font,
+    color: rgb(0, 0, 0),
+  });
+  
+  page.drawText(data.customerName, {
+    x: 50,
+    y: 700,
+    size: 12,
+    font,
+  });
+  
+  return pdfDoc.save();
+}
+```
+
+### After (@libpdf/core)
+
+```typescript
+import { PDF, rgb } from "@libpdf/core";
+
+async function createInvoice(data: InvoiceData) {
+  const pdf = PDF.create();
+  const page = pdf.addPage({ size: "letter" });
+  
+  page.drawText("INVOICE", {
+    x: 50,
+    y: 750,
+    size: 24,
+    font: "Helvetica",
+    color: rgb(0, 0, 0),
+  });
+  
+  page.drawText(data.customerName, {
+    x: 50,
+    y: 700,
+    size: 12,
+    font: "Helvetica",
+  });
+  
+  return pdf.save();
+}
+```
+
+## Getting Help
+
+- [API Reference](/docs/api/pdf) - Complete API documentation
+- [Guides](/docs/guides/pages) - Task-based guides
+- [Concepts](/docs/concepts/pdf-structure) - Understanding PDF internals

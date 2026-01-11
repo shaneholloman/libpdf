@@ -1,0 +1,800 @@
+---
+title: PDF
+description: The main document class for loading, creating, modifying, and saving PDFs.
+---
+
+# PDF
+
+The `PDF` class is the primary entry point for working with PDF documents. It provides methods for loading existing PDFs, creating new ones, and saving modifications.
+
+```typescript
+import { PDF } from "@libpdf/core";
+
+const pdf = await PDF.load(bytes);
+console.log(`${pdf.getPageCount()} pages`);
+```
+
+## Static Methods
+
+### PDF.load(bytes, options?)
+
+Load a PDF from bytes.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `bytes` | `Uint8Array` | required | PDF file bytes |
+| `[options]` | `LoadOptions` | | |
+| `[options.credentials]` | `string` | | User or owner password |
+| `[options.lenient]` | `boolean` | `true` | Enable lenient parsing for malformed PDFs |
+
+**Returns**: `Promise<PDF>`
+
+**Throws**:
+- `Error` - Document has no catalog (missing /Root in trailer)
+- `Error` - Parsing fails and lenient mode is disabled
+
+```typescript
+// Basic load
+const pdf = await PDF.load(bytes);
+
+// With password
+const encrypted = await PDF.load(bytes, { credentials: "secret" });
+
+// Strict parsing (throws on malformed PDFs)
+const strict = await PDF.load(bytes, { lenient: false });
+```
+
+---
+
+### PDF.create()
+
+Create a new empty PDF document.
+
+**Returns**: `PDF`
+
+```typescript
+const pdf = PDF.create();
+pdf.addPage({ size: "letter" });
+const bytes = await pdf.save();
+```
+
+---
+
+### PDF.merge(sources, options?)
+
+Merge multiple PDF documents into one.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sources` | `Uint8Array[]` | required | Array of PDF bytes to merge |
+| `[options]` | `MergeOptions` | | |
+| `[options.credentials]` | `string` | | Password for encrypted sources |
+| `[options.includeAnnotations]` | `boolean` | `true` | Include annotations from sources |
+
+**Returns**: `Promise<PDF>`
+
+```typescript
+const merged = await PDF.merge([pdf1Bytes, pdf2Bytes, pdf3Bytes]);
+const bytes = await merged.save();
+```
+
+---
+
+## Instance Properties
+
+### version
+
+PDF version string (e.g., "1.7", "2.0").
+
+**Type**: `string` (readonly)
+
+---
+
+### isEncrypted
+
+Whether the document is encrypted.
+
+**Type**: `boolean` (readonly)
+
+---
+
+### isAuthenticated
+
+Whether authentication succeeded (for encrypted documents).
+
+**Type**: `boolean` (readonly)
+
+---
+
+### recoveredViaBruteForce
+
+Whether this document was recovered via brute-force parsing.
+
+**Type**: `boolean` (readonly)
+
+---
+
+### isLinearized
+
+Whether this document is linearized (optimized for web viewing).
+
+**Type**: `boolean` (readonly)
+
+---
+
+### usesXRefStreams
+
+Whether the original document uses XRef streams (PDF 1.5+).
+
+**Type**: `boolean` (readonly)
+
+---
+
+### warnings
+
+Warnings accumulated during parsing and operations.
+
+**Type**: `string[]` (readonly)
+
+---
+
+## Page Methods
+
+### getPageCount()
+
+Get the number of pages in the document.
+
+**Returns**: `number`
+
+```typescript
+const count = pdf.getPageCount();
+```
+
+---
+
+### getPage(index)
+
+Get a single page by index (0-based).
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `index` | `number` | Page index (0-based) |
+
+**Returns**: `Promise<PDFPage | null>`
+
+```typescript
+const page = await pdf.getPage(0);
+if (page) {
+  console.log(`Size: ${page.width} x ${page.height}`);
+}
+```
+
+---
+
+### getPages()
+
+Get all pages in document order.
+
+**Returns**: `Promise<PDFPage[]>`
+
+```typescript
+const pages = await pdf.getPages();
+for (const page of pages) {
+  console.log(`Page ${page.index}: ${page.width} x ${page.height}`);
+}
+```
+
+---
+
+### addPage(options?)
+
+Add a new blank page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `[options]` | `AddPageOptions` | | |
+| `[options.width]` | `number` | `612` | Page width in points |
+| `[options.height]` | `number` | `792` | Page height in points |
+| `[options.size]` | `"letter" \| "a4" \| "legal"` | `"letter"` | Preset size |
+| `[options.orientation]` | `"portrait" \| "landscape"` | `"portrait"` | Page orientation |
+| `[options.rotate]` | `number` | `0` | Rotation (0, 90, 180, 270) |
+| `[options.insertAt]` | `number` | end | Insert position |
+
+**Returns**: `PDFPage`
+
+**Throws**: `RangeError` - If insertAt index is out of bounds
+
+```typescript
+// Append US Letter page
+const page = pdf.addPage();
+
+// Insert A4 page at beginning
+const firstPage = pdf.addPage({ size: "a4", insertAt: 0 });
+
+// Custom size landscape
+const wide = pdf.addPage({ width: 1000, height: 500 });
+```
+
+---
+
+### removePage(index)
+
+Remove a page at the given index.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `index` | `number` | Page index to remove |
+
+**Returns**: `PdfRef` - The removed page reference
+
+**Throws**: `RangeError` - If index is out of bounds
+
+```typescript
+pdf.removePage(0); // Remove first page
+```
+
+---
+
+### movePage(fromIndex, toIndex)
+
+Move a page from one position to another.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `fromIndex` | `number` | Current page index |
+| `toIndex` | `number` | Target page index |
+
+**Throws**: `RangeError` - If either index is out of bounds
+
+```typescript
+pdf.movePage(5, 0); // Move page 5 to the beginning
+```
+
+---
+
+### copyPagesFrom(source, indices, options?)
+
+Copy pages from another PDF document.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `source` | `PDF` | required | Source PDF document |
+| `indices` | `number[]` | required | Page indices to copy (0-based) |
+| `[options]` | `CopyPagesOptions` | | |
+| `[options.insertAt]` | `number` | end | Insert position |
+| `[options.includeAnnotations]` | `boolean` | `true` | Include annotations |
+
+**Returns**: `Promise<PDFPage[]>` - Array of copied pages
+
+**Throws**:
+- `RangeError` - If any source page index is out of bounds
+- `Error` - If source page not found
+
+```typescript
+// Copy pages 0 and 2 from source
+const copied = await dest.copyPagesFrom(source, [0, 2]);
+
+// Insert at beginning
+await dest.copyPagesFrom(source, [0], { insertAt: 0 });
+
+// Duplicate a page in the same document
+await pdf.copyPagesFrom(pdf, [0], { insertAt: 1 });
+```
+
+---
+
+### extractPages(indices, options?)
+
+Extract pages into a new PDF document.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `indices` | `number[]` | required | Page indices to extract |
+| `[options]` | `ExtractPagesOptions` | | |
+| `[options.includeAnnotations]` | `boolean` | `true` | Include annotations |
+
+**Returns**: `Promise<PDF>` - New PDF containing extracted pages
+
+**Throws**: `RangeError` - If any page index is out of bounds
+
+```typescript
+// Extract first 3 pages
+const first3 = await pdf.extractPages([0, 1, 2]);
+
+// Extract odd pages
+const oddPages = await pdf.extractPages([0, 2, 4, 6]);
+
+const bytes = await first3.save();
+```
+
+---
+
+### embedPage(source, pageIndex)
+
+Embed a page from another PDF as a reusable Form XObject.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `source` | `PDF` | Source PDF document |
+| `pageIndex` | `number` | Page index to embed (0-based) |
+
+**Returns**: `Promise<PDFEmbeddedPage>`
+
+**Throws**: `RangeError` - If page index is out of bounds
+
+```typescript
+const watermark = await PDF.load(watermarkBytes);
+const embedded = await pdf.embedPage(watermark, 0);
+
+// Draw on all pages
+for (const page of await pdf.getPages()) {
+  page.drawPage(embedded, { opacity: 0.5 });
+}
+```
+
+---
+
+## Form Methods
+
+### getForm()
+
+Get the interactive form, if present.
+
+**Returns**: `Promise<PDFForm | null>`
+
+```typescript
+const form = await pdf.getForm();
+if (form) {
+  const fields = form.getFields();
+  console.log(`${fields.length} fields found`);
+}
+```
+
+---
+
+## Metadata Methods
+
+### getTitle() / setTitle(title, options?)
+
+Get or set the document title.
+
+```typescript
+const title = pdf.getTitle();
+
+pdf.setTitle("Quarterly Report");
+
+// Show in viewer's title bar
+pdf.setTitle("My Document", { showInWindowTitleBar: true });
+```
+
+---
+
+### getAuthor() / setAuthor(author)
+
+Get or set the document author.
+
+```typescript
+pdf.setAuthor("Jane Smith");
+```
+
+---
+
+### getSubject() / setSubject(subject)
+
+Get or set the document subject.
+
+```typescript
+pdf.setSubject("Financial summary for Q4");
+```
+
+---
+
+### getKeywords() / setKeywords(keywords)
+
+Get or set document keywords.
+
+```typescript
+pdf.setKeywords(["finance", "quarterly", "2024"]);
+const keywords = pdf.getKeywords(); // ["finance", "quarterly", "2024"]
+```
+
+---
+
+### getCreator() / setCreator(creator)
+
+Get or set the creator application.
+
+```typescript
+pdf.setCreator("Report Generator v2.0");
+```
+
+---
+
+### getProducer() / setProducer(producer)
+
+Get or set the producer application.
+
+```typescript
+pdf.setProducer("@libpdf/core");
+```
+
+---
+
+### getCreationDate() / setCreationDate(date)
+
+Get or set the creation date.
+
+```typescript
+pdf.setCreationDate(new Date());
+const created = pdf.getCreationDate();
+```
+
+---
+
+### getModificationDate() / setModificationDate(date)
+
+Get or set the modification date.
+
+```typescript
+pdf.setModificationDate(new Date());
+```
+
+---
+
+### getLanguage() / setLanguage(language)
+
+Get or set the document language (RFC 3066 tag).
+
+```typescript
+pdf.setLanguage("en-US");
+```
+
+---
+
+### getMetadata() / setMetadata(metadata)
+
+Get or set multiple metadata fields at once.
+
+```typescript
+// Get all metadata
+const metadata = pdf.getMetadata();
+
+// Set multiple fields
+pdf.setMetadata({
+  title: "Quarterly Report",
+  author: "Jane Smith",
+  creationDate: new Date(),
+});
+```
+
+---
+
+## Security Methods
+
+### getSecurity()
+
+Get detailed security information.
+
+**Returns**: `SecurityInfo`
+
+```typescript
+const security = pdf.getSecurity();
+console.log(`Encrypted: ${security.isEncrypted}`);
+console.log(`Algorithm: ${security.algorithm}`);
+console.log(`Can copy: ${security.permissions.copy}`);
+```
+
+---
+
+### getPermissions()
+
+Get current permission flags.
+
+**Returns**: `Permissions`
+
+```typescript
+const perms = pdf.getPermissions();
+if (!perms.copy) {
+  console.log("Copy/paste is restricted");
+}
+```
+
+**Permission Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `print` | Print the document |
+| `printHighQuality` | High-resolution printing |
+| `modify` | Modify document contents |
+| `copy` | Copy text and graphics |
+| `annotate` | Add or modify annotations |
+| `fillForms` | Fill form fields |
+| `assembleDocument` | Insert, delete, rotate pages |
+| `extractForAccessibility` | Extract for accessibility |
+
+---
+
+### hasOwnerAccess()
+
+Check if authenticated with owner-level access.
+
+**Returns**: `boolean`
+
+```typescript
+if (pdf.hasOwnerAccess()) {
+  pdf.removeProtection();
+}
+```
+
+---
+
+### authenticate(password)
+
+Attempt to authenticate with a password.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `password` | `string` | Password to try |
+
+**Returns**: `AuthenticationResult`
+
+```typescript
+const result = pdf.authenticate("ownerPassword");
+if (result.isOwner) {
+  pdf.removeProtection();
+}
+```
+
+---
+
+### setProtection(options)
+
+Add or change document encryption.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options` | `ProtectionOptions` | required | |
+| `[options.userPassword]` | `string` | | Password to open |
+| `[options.ownerPassword]` | `string` | random | Password for full access |
+| `[options.permissions]` | `PermissionOptions` | all true | Permission flags |
+| `[options.algorithm]` | `EncryptionAlgorithmOption` | `"AES-256"` | Encryption algorithm |
+| `[options.encryptMetadata]` | `boolean` | `true` | Encrypt metadata |
+
+**Throws**: `PermissionDeniedError` - If insufficient permissions
+
+**Algorithm Options**:
+
+| Algorithm | Key Length | Notes |
+|-----------|------------|-------|
+| `"RC4-40"` | 40-bit | Legacy, weak, avoid |
+| `"RC4-128"` | 128-bit | Deprecated |
+| `"AES-128"` | 128-bit | Recommended minimum |
+| `"AES-256"` | 256-bit | Strongest, default |
+
+```typescript
+pdf.setProtection({
+  userPassword: "secret",
+  ownerPassword: "admin",
+  permissions: { copy: false, print: true },
+  algorithm: "AES-256",
+});
+```
+
+---
+
+### removeProtection()
+
+Remove all encryption from the document.
+
+**Throws**: `PermissionDeniedError` - If insufficient permissions
+
+```typescript
+const pdf = await PDF.load(bytes, { credentials: "ownerPassword" });
+pdf.removeProtection();
+const unprotectedBytes = await pdf.save();
+```
+
+---
+
+## Font and Image Methods
+
+### embedFont(bytes, options?)
+
+Embed a font for use in drawing operations.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `bytes` | `Uint8Array` | required | TTF or OTF font file bytes |
+| `[options]` | `EmbedFontOptions` | | |
+| `[options.subset]` | `boolean` | `true` | Subset font on save |
+
+**Returns**: `EmbeddedFont`
+
+```typescript
+const font = pdf.embedFont(fontBytes);
+
+page.drawText("Hello", {
+  font,
+  size: 24,
+});
+```
+
+---
+
+### embedImage(bytes)
+
+Embed an image for use in drawing operations.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `bytes` | `Uint8Array` | JPEG or PNG image bytes |
+
+**Returns**: `Promise<PDFImage>`
+
+```typescript
+const image = await pdf.embedImage(jpegBytes);
+
+page.drawImage(image, {
+  x: 50,
+  y: 500,
+  width: 200,
+});
+```
+
+---
+
+## Digital Signatures
+
+### sign(options)
+
+Sign the document with a digital signature.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options` | `SignOptions` | required | |
+| `options.signer` | `Signer` | required | P12Signer or CryptoKeySigner |
+| `[options.level]` | `PAdESLevel` | `"B-B"` | PAdES conformance level |
+| `[options.timestampServer]` | `string` | | RFC 3161 timestamp URL |
+| `[options.fieldName]` | `string` | auto | Signature field name |
+
+**Returns**: `Promise<SignResult>`
+
+**PAdES Levels**:
+
+| Level | Description |
+|-------|-------------|
+| `"B-B"` | Basic signature |
+| `"B-T"` | With timestamp |
+| `"B-LT"` | Long-term validation |
+| `"B-LTA"` | Long-term archival |
+
+```typescript
+import { P12Signer } from "@libpdf/core";
+
+const signer = await P12Signer.create(p12Bytes, "password");
+
+const result = await pdf.sign({
+  signer,
+  level: "B-LTA",
+  timestampServer: "http://timestamp.example.com",
+});
+
+// result.bytes contains the signed PDF
+```
+
+---
+
+## Save Methods
+
+### save(options?)
+
+Save the document to bytes.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `[options]` | `SaveOptions` | | |
+| `[options.incremental]` | `boolean` | `false` | Append-only save (preserves signatures) |
+| `[options.useXRefStream]` | `boolean` | auto | Use XRef stream format |
+| `[options.subsetFonts]` | `boolean` | `false` | Subset embedded fonts |
+
+**Returns**: `Promise<Uint8Array>`
+
+```typescript
+// Full rewrite
+const bytes = await pdf.save();
+
+// Incremental (preserves signatures)
+const bytes = await pdf.save({ incremental: true });
+
+// With font subsetting
+const bytes = await pdf.save({ subsetFonts: true });
+```
+
+---
+
+### reload(bytes)
+
+Reload the PDF from new bytes after an incremental save.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `bytes` | `Uint8Array` | New PDF bytes |
+
+**Throws**: `Error` - If the document has no catalog
+
+```typescript
+const signed = await pdf.sign({ signer });
+await pdf.reload(signed.bytes);
+// Continue using the same PDF instance
+```
+
+---
+
+## Types
+
+### LoadOptions
+
+```typescript
+interface LoadOptions {
+  credentials?: string;  // User or owner password
+  lenient?: boolean;     // Enable lenient parsing (default: true)
+}
+```
+
+### SaveOptions
+
+```typescript
+interface SaveOptions {
+  incremental?: boolean;   // Append-only save
+  useXRefStream?: boolean; // Use XRef stream format
+  subsetFonts?: boolean;   // Subset embedded fonts
+}
+```
+
+### DocumentMetadata
+
+```typescript
+interface DocumentMetadata {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string[];
+  creator?: string;
+  producer?: string;
+  creationDate?: Date;
+  modificationDate?: Date;
+  trapped?: "True" | "False" | "Unknown";
+  language?: string;
+}
+```
+
+### SecurityInfo
+
+```typescript
+interface SecurityInfo {
+  isEncrypted: boolean;
+  algorithm?: "RC4-40" | "RC4-128" | "AES-128" | "AES-256";
+  keyLength?: number;
+  revision?: number;
+  hasUserPassword?: boolean;
+  hasOwnerPassword?: boolean;
+  authenticatedAs?: "user" | "owner" | null;
+  permissions: Permissions;
+  encryptMetadata?: boolean;
+}
+```
+
+### Permissions
+
+```typescript
+interface Permissions {
+  print: boolean;
+  printHighQuality: boolean;
+  modify: boolean;
+  copy: boolean;
+  annotate: boolean;
+  fillForms: boolean;
+  assembleDocument: boolean;
+  extractForAccessibility: boolean;
+}
+```

@@ -1,0 +1,107 @@
+---
+title: Installation
+description: Install LibPDF for Node.js, Bun, or browsers.
+---
+
+# Installation
+
+## Package Managers
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tab value="npm">
+    ```bash
+    npm install @libpdf/core
+    ```
+  </Tab>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add @libpdf/core
+    ```
+  </Tab>
+  <Tab value="yarn">
+    ```bash
+    yarn add @libpdf/core
+    ```
+  </Tab>
+  <Tab value="bun">
+    ```bash
+    bun add @libpdf/core
+    ```
+  </Tab>
+</Tabs>
+
+## Requirements
+
+- **Node.js** 18 or later
+- **Bun** 1.0 or later
+- **TypeScript** 5+ (recommended, but not required)
+- **ESM only** - CommonJS is not supported
+
+## Browser Usage
+
+LibPDF works in browsers with any modern bundler:
+
+- Vite
+- webpack
+- esbuild
+- Rollup
+
+No Node.js polyfills are required. The library uses `Uint8Array` for binary data, which is natively supported in all modern browsers.
+
+```ts
+// Works the same in browsers
+import { PDF } from "@libpdf/core";
+
+const response = await fetch("/document.pdf");
+const bytes = new Uint8Array(await response.arrayBuffer());
+const pdf = await PDF.load(bytes);
+```
+
+## TypeScript Configuration
+
+If you're using TypeScript, ensure your `tsconfig.json` has the following settings:
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true
+  }
+}
+```
+
+## Verify Installation
+
+Create a simple script to verify everything is working:
+
+```ts
+import { PDF } from "@libpdf/core";
+
+const pdf = PDF.create();
+pdf.addPage();
+const bytes = await pdf.save();
+
+console.log(`Created PDF with ${bytes.length} bytes`);
+```
+
+Run it:
+
+```bash
+npx tsx verify.ts
+# or with Bun
+bun run verify.ts
+```
+
+You should see output like `Created PDF with 1234 bytes`.
+
+## Next Steps
+
+<Cards>
+  <Card title="Parse a PDF" href="/docs/getting-started/parse-pdf">
+    Load and inspect existing PDF documents
+  </Card>
+  <Card title="Create a PDF" href="/docs/getting-started/create-pdf">
+    Generate PDFs from scratch
+  </Card>
+</Cards>

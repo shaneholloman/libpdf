@@ -1,0 +1,241 @@
+---
+title: PDF Structure
+description: Understand how PDF files are organized internally, from header to trailer.
+---
+
+# PDF Structure
+
+Understanding PDF internals helps you work more effectively with LibPDF. This guide explains the key components of a PDF file and how they relate to the library's API.
+
+## A Book Read Backwards
+
+Think of a PDF as a **book with an index at the back**. While you might expect to read a file from start to finish, PDF readers start at the *end* of the file.
+
+Why? Because the PDF format was designed for efficient updates. By reading from the end, a viewer can quickly find the most recent version of the document without scanning the entire file.
+
+## The Four Parts of a PDF
+
+Every PDF file contains these components:
+
+```
+┌─────────────────────────────────┐
+│ %PDF-1.7                        │  ← Header (version)
+├─────────────────────────────────┤
+│ 1 0 obj                         │
+│ << /Type /Catalog /Pages 2 0 R >>│
+│ endobj                          │
+│                                 │
+│ 2 0 obj                         │  ← Body (objects)
+│ << /Type /Pages /Count 1 ... >> │
+│ endobj                          │
+│                                 │
+│ ... more objects ...            │
+├─────────────────────────────────┤
+│ xref                            │
+│ 0 5                             │  ← Cross-Reference Table
+│ 0000000000 65535 f              │
+│ 0000000009 00000 n              │
+│ ...                             │
+├─────────────────────────────────┤
+│ trailer                         │
+│ << /Root 1 0 R /Size 5 >>       │  ← Trailer
+│ startxref                       │
+│ 1234                            │
+│ %%EOF                           │
+└─────────────────────────────────┘
+```
+
+### 1. Header
+
+The first line declares the PDF version:
+
+```
+%PDF-1.7
+```
+
+Common versions:
+- **1.4**: Added encryption, JavaScript
+- **1.5**: Added compressed object streams
+- **1.6**: Added AES encryption
+- **1.7**: Added XFA forms, more encryption options
+- **2.0**: Modern standard (2017)
+
+LibPDF reads all versions (1.0-2.0) and writes PDF 1.7 by default.
+
+### 2. Body (Objects)
+
+The body contains all document content as numbered **objects**. Each object has an ID and optional generation number:
+
+```
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+```
+
+This is object 1, generation 0. The `2 0 R` is a **reference** to object 2.
+
+Objects can be:
+- **Dictionaries**: `<< /Key /Value >>` - structured data
+- **Arrays**: `[ 1 2 3 ]` - ordered lists
+- **Streams**: Large data (page content, images, fonts)
+- **Primitives**: Numbers, strings, names, booleans
+
+### 3. Cross-Reference Table (XRef)
+
+The xref table is an index mapping object numbers to byte offsets:
+
+```
+xref
+0 5
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000267 00000 n
+```
+
+This tells the reader: "Object 1 starts at byte 9, object 2 at byte 58, etc."
+
+Modern PDFs (1.5+) can use **xref streams** instead-a compressed binary format that's smaller and faster to parse.
+
+### 4. Trailer
+
+The trailer points to the document root and xref location:
+
+```
+trailer
+<< /Root 1 0 R /Size 5 >>
+startxref
+1234
+%%EOF
+```
+
+- **/Root**: Reference to the document catalog
+- **/Size**: Total number of objects
+- **startxref**: Byte offset of the xref table
+
+## The Document Tree
+
+PDF objects form a tree structure starting from the catalog:
+
+```
+Catalog (/Root)
+├── Pages (page tree root)
+│   ├── Page 1
+│   │   ├── Contents (drawing commands)
+│   │   └── Resources
+│   │       ├── Fonts
+│   │       └── Images
+│   ├── Page 2
+│   └── ...
+├── AcroForm (interactive forms)
+├── Outlines (bookmarks)
+└── Metadata
+```
+
+## Why This Matters for You
+
+### Loading PDFs
+
+When you call `PDF.load()`, the library:
+
+1. Reads the trailer to find the xref
+2. Parses the xref to build an object index
+3. Loads the catalog and page tree
+4. Defers loading other objects until needed (lazy loading)
+
+```typescript
+const pdf = await PDF.load(bytes);
+
+// The catalog is loaded, but page content isn't parsed yet
+const page = await pdf.getPage(0);
+
+// Now page content is loaded on demand
+if (page) {
+  const text = await page.extractText();
+}
+```
+
+### Incremental Saves
+
+The PDF format's design enables **incremental saves**. Instead of rewriting the entire file, you append changes and a new xref:
+
+```
+[Original PDF content]
+[New/modified objects]
+[New xref pointing to changes]
+[New trailer]
+%%EOF
+```
+
+This is crucial for:
+- **Preserving signatures**: Signed regions stay untouched
+- **Fast saves**: Only write what changed
+- **Audit trails**: Previous versions remain in the file
+
+```typescript
+// Incremental save appends changes
+const incrementalBytes = await pdf.save({ incremental: true });
+
+// Full rewrite replaces the entire file
+const rewrittenBytes = await pdf.save();
+```
+
+### Malformed PDFs
+
+Real-world PDFs often have structural issues:
+
+- Missing xref entries
+- Invalid object references
+- Truncated files
+
+LibPDF uses lenient parsing by default. If the xref is broken, it falls back to **brute-force parsing**-scanning the file for object markers.
+
+```typescript
+// Lenient mode is on by default
+const pdf = await PDF.load(bytes);
+
+// Check if recovery was needed
+if (pdf.recoveredViaBruteForce) {
+  console.log("PDF was malformed, recovered via scanning");
+}
+
+// Strict mode throws on malformed files
+const strict = await PDF.load(bytes, { lenient: false });
+```
+
+## Object References in Code
+
+When working with the low-level API, you'll encounter references:
+
+```typescript
+// Get a page dictionary
+const page = await pdf.getPage(0);
+if (!page) return;
+
+const pageDict = page.dict;
+
+// References are PdfRef objects
+const contentsRef = pageDict.getRef("Contents");
+// contentsRef.objectNumber = 5, contentsRef.generation = 0
+
+// Resolve the reference to get the actual object
+if (contentsRef) {
+  const contents = await pdf.context.resolve(contentsRef);
+}
+```
+
+## Summary
+
+| Component | Purpose | Library Access |
+|-----------|---------|----------------|
+| Header | Version info | `pdf.version` |
+| Body | Document content | `pdf.getPage()`, `pdf.getForm()`, etc. |
+| XRef | Object index | Internal (handled automatically) |
+| Trailer | Root pointers | `pdf.context.info.trailer` |
+
+Understanding PDF structure helps you:
+- Debug loading issues
+- Choose between incremental and full saves
+- Work with low-level APIs when needed
+- Understand why certain operations are fast or slow

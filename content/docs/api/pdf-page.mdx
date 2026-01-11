@@ -1,0 +1,659 @@
+---
+title: PDFPage
+description: Page class for accessing dimensions, drawing content, and extracting text.
+---
+
+# PDFPage
+
+The `PDFPage` class represents a single page in a PDF document. It provides access to page properties, drawing operations, and text extraction.
+
+```typescript
+const pdf = await PDF.load(bytes);
+const page = await pdf.getPage(0);
+if (!page) throw new Error("Page not found");
+
+console.log(`Size: ${page.width} x ${page.height}`);
+console.log(`Rotation: ${page.rotation}`);
+```
+
+## Properties
+
+### ref
+
+The page reference (for low-level operations).
+
+**Type**: `PdfRef` (readonly)
+
+---
+
+### dict
+
+The page dictionary (for low-level operations).
+
+**Type**: `PdfDict` (readonly)
+
+---
+
+### index
+
+The page index (0-based).
+
+**Type**: `number` (readonly)
+
+---
+
+### width
+
+Page width in points (accounting for rotation).
+
+**Type**: `number` (readonly)
+
+```typescript
+const width = page.width; // e.g., 612 for US Letter
+```
+
+---
+
+### height
+
+Page height in points (accounting for rotation).
+
+**Type**: `number` (readonly)
+
+```typescript
+const height = page.height; // e.g., 792 for US Letter
+```
+
+---
+
+### rotation
+
+Page rotation in degrees (0, 90, 180, or 270).
+
+**Type**: `0 | 90 | 180 | 270` (readonly)
+
+```typescript
+if (page.rotation === 90) {
+  console.log("Page is rotated 90 degrees clockwise");
+}
+```
+
+---
+
+### isLandscape
+
+Whether the page is in landscape orientation.
+
+**Type**: `boolean` (readonly)
+
+---
+
+### isPortrait
+
+Whether the page is in portrait orientation.
+
+**Type**: `boolean` (readonly)
+
+---
+
+## Page Boxes
+
+PDF pages have multiple "boxes" defining different regions. Each returns a `Rectangle` with `{ x1, y1, x2, y2 }` coordinates.
+
+### getMediaBox()
+
+Get the MediaBox (page boundary). Falls back to US Letter if not defined.
+
+**Returns**: `Rectangle`
+
+---
+
+### getCropBox()
+
+Get the CropBox (visible region). Falls back to MediaBox if not defined.
+
+**Returns**: `Rectangle`
+
+---
+
+### getBleedBox()
+
+Get the BleedBox (printing bleed area). Falls back to CropBox if not defined.
+
+**Returns**: `Rectangle`
+
+---
+
+### getTrimBox()
+
+Get the TrimBox (intended dimensions after trimming). Falls back to CropBox if not defined.
+
+**Returns**: `Rectangle`
+
+---
+
+### getArtBox()
+
+Get the ArtBox (meaningful content area). Falls back to CropBox if not defined.
+
+**Returns**: `Rectangle`
+
+---
+
+### setRotation(degrees)
+
+Set the page rotation.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `degrees` | `0 \| 90 \| 180 \| 270` | Rotation in degrees |
+
+```typescript
+page.setRotation(90);
+```
+
+---
+
+## Text Drawing
+
+### drawText(text, options?)
+
+Draw text on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `text` | `string` | required | Text to draw |
+| `[options]` | `DrawTextOptions` | | |
+| `[options.x]` | `number` | `0` | X position from left |
+| `[options.y]` | `number` | `0` | Y position from bottom |
+| `[options.font]` | `string \| EmbeddedFont` | `"Helvetica"` | Font to use |
+| `[options.size]` | `number` | `12` | Font size in points |
+| `[options.color]` | `Color` | black | Text color |
+| `[options.opacity]` | `number` | `1` | Opacity (0-1) |
+| `[options.maxWidth]` | `number` | | Enable word wrapping |
+| `[options.lineHeight]` | `number` | `size * 1.2` | Line height |
+| `[options.alignment]` | `"left" \| "center" \| "right" \| "justify"` | `"left"` | Text alignment |
+| `[options.rotate]` | `Rotation` | | Rotation options |
+
+```typescript
+// Simple text
+page.drawText("Hello, World!", {
+  x: 50,
+  y: 700,
+  size: 24,
+  color: rgb(0, 0, 0),
+});
+
+// With embedded font
+const font = await pdf.embedFont(fontBytes);
+page.drawText("Custom Font", {
+  x: 50,
+  y: 650,
+  font,
+  size: 18,
+});
+
+// Multiline with wrapping
+page.drawText(longText, {
+  x: 50,
+  y: 600,
+  maxWidth: 500,
+  lineHeight: 18,
+  alignment: "justify",
+});
+```
+
+**Standard 14 Fonts** (built-in, no embedding required):
+
+| Font Name |
+|-----------|
+| `"Helvetica"` |
+| `"Helvetica-Bold"` |
+| `"Helvetica-Oblique"` |
+| `"Helvetica-BoldOblique"` |
+| `"Times-Roman"` |
+| `"Times-Bold"` |
+| `"Times-Italic"` |
+| `"Times-BoldItalic"` |
+| `"Courier"` |
+| `"Courier-Bold"` |
+| `"Courier-Oblique"` |
+| `"Courier-BoldOblique"` |
+| `"Symbol"` |
+| `"ZapfDingbats"` |
+
+---
+
+## Shape Drawing
+
+### drawRectangle(options)
+
+Draw a rectangle on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options.x` | `number` | required | X position |
+| `options.y` | `number` | required | Y position |
+| `options.width` | `number` | required | Rectangle width |
+| `options.height` | `number` | required | Rectangle height |
+| `[options.color]` | `Color` | | Fill color |
+| `[options.borderColor]` | `Color` | | Border color |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+| `[options.borderDashArray]` | `number[]` | | Dash pattern |
+| `[options.opacity]` | `number` | `1` | Fill opacity |
+| `[options.borderOpacity]` | `number` | `1` | Border opacity |
+| `[options.cornerRadius]` | `number` | | Rounded corners |
+| `[options.rotate]` | `Rotation` | | Rotation |
+
+```typescript
+// Filled rectangle
+page.drawRectangle({
+  x: 50,
+  y: 500,
+  width: 200,
+  height: 100,
+  color: rgb(0.95, 0.95, 0.95),
+});
+
+// Stroked with rounded corners
+page.drawRectangle({
+  x: 50,
+  y: 350,
+  width: 200,
+  height: 100,
+  borderColor: rgb(0, 0, 0),
+  borderWidth: 2,
+  cornerRadius: 10,
+});
+```
+
+---
+
+### drawLine(options)
+
+Draw a line on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options.start` | `{ x: number, y: number }` | required | Start point |
+| `options.end` | `{ x: number, y: number }` | required | End point |
+| `[options.color]` | `Color` | black | Line color |
+| `[options.thickness]` | `number` | `1` | Line thickness |
+| `[options.opacity]` | `number` | `1` | Opacity |
+| `[options.dashArray]` | `number[]` | | Dash pattern |
+| `[options.lineCap]` | `LineCap` | `"butt"` | Line cap style |
+
+```typescript
+page.drawLine({
+  start: { x: 50, y: 500 },
+  end: { x: 550, y: 500 },
+  color: rgb(0, 0, 0),
+  thickness: 1,
+});
+
+// Dashed line
+page.drawLine({
+  start: { x: 50, y: 450 },
+  end: { x: 550, y: 450 },
+  dashArray: [5, 3],
+});
+```
+
+---
+
+### drawCircle(options)
+
+Draw a circle on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options.x` | `number` | required | Center X |
+| `options.y` | `number` | required | Center Y |
+| `options.radius` | `number` | required | Radius |
+| `[options.color]` | `Color` | | Fill color |
+| `[options.borderColor]` | `Color` | | Border color |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+| `[options.opacity]` | `number` | `1` | Fill opacity |
+| `[options.borderOpacity]` | `number` | `1` | Border opacity |
+
+```typescript
+page.drawCircle({
+  x: 300,
+  y: 400,
+  radius: 50,
+  color: rgb(1, 0, 0),
+  borderColor: rgb(0, 0, 0),
+  borderWidth: 2,
+});
+```
+
+---
+
+### drawEllipse(options)
+
+Draw an ellipse on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options.x` | `number` | required | Center X |
+| `options.y` | `number` | required | Center Y |
+| `options.xRadius` | `number` | required | Horizontal radius |
+| `options.yRadius` | `number` | required | Vertical radius |
+| `[options.color]` | `Color` | | Fill color |
+| `[options.borderColor]` | `Color` | | Border color |
+| `[options.borderWidth]` | `number` | `1` | Border width |
+| `[options.opacity]` | `number` | `1` | Fill opacity |
+| `[options.borderOpacity]` | `number` | `1` | Border opacity |
+| `[options.rotate]` | `Rotation` | | Rotation |
+
+```typescript
+page.drawEllipse({
+  x: 300,
+  y: 400,
+  xRadius: 100,
+  yRadius: 50,
+  color: rgb(0, 0, 1),
+});
+```
+
+---
+
+## Image Drawing
+
+### drawImage(image, options?)
+
+Draw an image on the page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `image` | `PDFImage` | required | Embedded image |
+| `[options]` | `DrawImageOptions` | | |
+| `[options.x]` | `number` | `0` | X position |
+| `[options.y]` | `number` | `0` | Y position |
+| `[options.width]` | `number` | natural | Target width |
+| `[options.height]` | `number` | natural | Target height |
+| `[options.opacity]` | `number` | `1` | Opacity |
+| `[options.rotate]` | `Rotation` | | Rotation |
+
+If only `width` or `height` is specified, aspect ratio is preserved.
+
+```typescript
+const image = await pdf.embedImage(jpegBytes);
+
+// Draw at natural size
+page.drawImage(image, { x: 50, y: 500 });
+
+// Scale to width
+page.drawImage(image, { x: 50, y: 400, width: 200 });
+
+// With rotation
+page.drawImage(image, {
+  x: 300,
+  y: 400,
+  width: 100,
+  height: 100,
+  rotate: { angle: 45 },
+});
+```
+
+---
+
+## Embedded Page Drawing
+
+### drawPage(embedded, options?)
+
+Draw an embedded page (Form XObject) onto this page.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `embedded` | `PDFEmbeddedPage` | required | Embedded page |
+| `[options]` | `DrawPageOptions` | | |
+| `[options.x]` | `number` | `0` | X position |
+| `[options.y]` | `number` | `0` | Y position |
+| `[options.scale]` | `number` | `1` | Uniform scale |
+| `[options.width]` | `number` | | Target width (overrides scale) |
+| `[options.height]` | `number` | | Target height (overrides scale) |
+| `[options.opacity]` | `number` | `1` | Opacity |
+| `[options.background]` | `boolean` | `false` | Draw behind existing content |
+
+```typescript
+const watermarkPdf = await PDF.load(watermarkBytes);
+const watermark = await pdf.embedPage(watermarkPdf, 0);
+
+// Center on page
+page.drawPage(watermark, {
+  x: (page.width - watermark.width) / 2,
+  y: (page.height - watermark.height) / 2,
+  opacity: 0.5,
+});
+
+// Draw as background
+const letterheadPdf = await PDF.load(letterheadBytes);
+const letterhead = await pdf.embedPage(letterheadPdf, 0);
+page.drawPage(letterhead, { background: true });
+```
+
+---
+
+## Path Drawing
+
+### drawPath()
+
+Start building a custom path with a fluent API.
+
+**Returns**: `PathBuilder`
+
+```typescript
+// Triangle
+page.drawPath()
+  .moveTo(100, 100)
+  .lineTo(200, 100)
+  .lineTo(150, 200)
+  .close()
+  .fill({ color: rgb(1, 0, 0) });
+
+// Complex shape
+page.drawPath()
+  .moveTo(50, 50)
+  .curveTo(100, 100, 150, 100, 200, 50)
+  .lineTo(200, 150)
+  .close()
+  .fillAndStroke({
+    color: rgb(0.9, 0.9, 1),
+    borderColor: rgb(0, 0, 1),
+  });
+```
+
+**PathBuilder Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `moveTo(x, y)` | Move to point |
+| `lineTo(x, y)` | Draw line to point |
+| `curveTo(cp1x, cp1y, cp2x, cp2y, x, y)` | Bezier curve |
+| `quadraticCurveTo(cpx, cpy, x, y)` | Quadratic curve |
+| `close()` | Close the path |
+| `fill(options)` | Fill the path |
+| `stroke(options)` | Stroke the path |
+| `fillAndStroke(options)` | Fill and stroke |
+
+---
+
+## Form Field Drawing
+
+### drawField(field, options)
+
+Draw a form field widget on this page.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `field` | `FormField` | Field to draw |
+| `options.x` | `number` | X position |
+| `options.y` | `number` | Y position |
+| `options.width` | `number` | Widget width |
+| `options.height` | `number` | Widget height |
+| `[options.option]` | `string` | Radio option value (required for radio groups) |
+
+**Throws**:
+- `Error` - If field is a signature field
+- `Error` - If radio group option is missing or invalid
+
+```typescript
+// Text field
+await page.drawField(nameField, {
+  x: 100,
+  y: 700,
+  width: 200,
+  height: 24,
+});
+
+// Checkbox
+await page.drawField(agreeCheckbox, {
+  x: 100,
+  y: 650,
+  width: 18,
+  height: 18,
+});
+
+// Radio group - each option needs its own widget
+await page.drawField(paymentRadio, {
+  x: 100,
+  y: 550,
+  width: 16,
+  height: 16,
+  option: "Credit Card",
+});
+await page.drawField(paymentRadio, {
+  x: 100,
+  y: 520,
+  width: 16,
+  height: 16,
+  option: "PayPal",
+});
+```
+
+---
+
+## Text Extraction
+
+### extractText(options?)
+
+Extract all text content from the page.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `[options]` | `ExtractTextOptions` | Extraction options |
+
+**Returns**: `Promise<PageText>`
+
+```typescript
+const pageText = await page.extractText();
+console.log(pageText.text); // Plain text
+
+// Access structured content
+for (const line of pageText.lines) {
+  console.log(`Line at y=${line.baseline}: "${line.text}"`);
+}
+```
+
+**PageText Structure**:
+
+```typescript
+interface PageText {
+  pageIndex: number;
+  width: number;
+  height: number;
+  text: string;          // Plain text
+  lines: TextLine[];     // Structured lines
+}
+
+interface TextLine {
+  text: string;
+  baseline: number;
+  spans: TextSpan[];
+}
+```
+
+---
+
+### findText(query, options?)
+
+Search for text on the page.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `query` | `string \| RegExp` | Search query |
+| `[options]` | `FindTextOptions` | |
+| `[options.caseSensitive]` | `boolean` | Case-sensitive matching |
+| `[options.wholeWord]` | `boolean` | Match whole words only |
+
+**Returns**: `Promise<TextMatch[]>`
+
+```typescript
+// String search
+const matches = await page.findText("invoice");
+for (const match of matches) {
+  console.log(`Found at:`, match.bbox);
+}
+
+// Regex search
+const placeholders = await page.findText(/\{\{\s*\w+\s*\}\}/g);
+```
+
+**TextMatch Structure**:
+
+```typescript
+interface TextMatch {
+  text: string;
+  pageIndex: number;
+  bbox: { x: number; y: number; width: number; height: number };
+}
+```
+
+---
+
+## Types
+
+### Rectangle
+
+```typescript
+interface Rectangle {
+  x1: number;  // Left
+  y1: number;  // Bottom
+  x2: number;  // Right
+  y2: number;  // Top
+}
+```
+
+### Color
+
+Colors can be created with helper functions:
+
+```typescript
+import { rgb, cmyk, grayscale } from "@libpdf/core";
+
+const red = rgb(1, 0, 0);
+const cyan = cmyk(1, 0, 0, 0);
+const gray = grayscale(0.5);
+```
+
+### Rotation
+
+```typescript
+interface Rotation {
+  angle: number;  // Degrees
+  origin?: { x: number; y: number };  // Rotation center
+}
+```
+
+### LineCap
+
+```typescript
+type LineCap = "butt" | "round" | "square";
+```
+
+### LineJoin
+
+```typescript
+type LineJoin = "miter" | "round" | "bevel";
+```

@@ -1,0 +1,298 @@
+---
+title: Digital Signatures
+description: Sign PDFs with PKCS#12 certificates or Web Crypto API keys.
+---
+
+# Digital Signatures
+
+This guide covers digitally signing PDF documents using PAdES (PDF Advanced Electronic Signatures) standards.
+
+## Overview
+
+Digital signatures provide:
+
+- **Authentication** - Verify who signed the document
+- **Integrity** - Detect if the document was modified after signing
+- **Non-repudiation** - Signer cannot deny signing
+
+## PAdES Conformance Levels
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| B-B | Basic signature | Simple signing |
+| B-T | With timestamp | Proves when signed |
+| B-LT | Long-term validation | Validates after cert expires |
+| B-LTA | Long-term archival | Highest durability |
+
+## Sign with PKCS#12 (.p12/.pfx)
+
+The most common signing method using a certificate file:
+
+```ts
+import { PDF, P12Signer } from "@libpdf/core";
+import { readFile, writeFile } from "fs/promises";
+
+const pdf = await PDF.load(await readFile("document.pdf"));
+
+// Create signer from .p12 file
+const p12Bytes = await readFile("certificate.p12");
+const signer = await P12Signer.create(p12Bytes, "certificate-password");
+
+// Sign the document
+const signed =await pdf.sign({ signer });
+
+// Save with incremental update (preserves signature)
+await writeFile("signed.pdf", signed.bytes);
+```
+
+## Signature Levels
+
+### Basic Signature (B-B)
+
+```ts
+await pdf.sign({
+  signer,
+  level: "B-B",
+});
+```
+
+### With Timestamp (B-T)
+
+```ts
+import { HttpTimestampAuthority } from "@libpdf/core";
+
+const tsa = new HttpTimestampAuthority("http://timestamp.digicert.com");
+
+await pdf.sign({
+  signer,
+  level: "B-T",
+  timestampAuthority: tsa,
+});
+```
+
+A timestamp proves the signature existed at a specific time, even if the certificate later expires or is revoked.
+
+### Long-Term Validation (B-LT)
+
+```ts
+const tsa = new HttpTimestampAuthority("http://timestamp.digicert.com");
+
+await pdf.sign({
+  signer,
+  level: "B-LT",
+  timestampAuthority: tsa,
+});
+```
+
+Embeds all validation data (certificates, CRLs, OCSP responses) so the signature can be verified even after the certificate chain expires.
+
+### Long-Term Archival (B-LTA)
+
+```ts
+const tsa = new HttpTimestampAuthority("http://timestamp.digicert.com");
+
+await pdf.sign({
+  signer,
+  level: "B-LTA",
+  timestampAuthority: tsa,
+});
+```
+
+Adds a document timestamp that covers the embedded validation data, enabling indefinite verification.
+
+## Sign with Web Crypto API
+
+For browser environments or HSM-backed keys:
+
+```ts
+import { PDF, CryptoKeySigner } from "@libpdf/core";
+
+// Assuming you have a CryptoKey and DER-encoded certificate
+const signer = new CryptoKeySigner(
+  privateKey,           // CryptoKey
+  certificateDer,       // Uint8Array (DER-encoded X.509 certificate)
+  "RSA",                // KeyType: "RSA" or "EC"
+  "RSASSA-PKCS1-v1_5"   // SignatureAlgorithm
+);
+
+await pdf.sign({ signer });
+```
+
+### Generate Keys in Browser
+
+```ts
+// Generate a key pair
+const keyPair = await crypto.subtle.generateKey(
+  {
+    name: "RSASSA-PKCS1-v1_5",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+    hash: "SHA-256",
+  },
+  true,
+  ["sign", "verify"]
+);
+
+// Note: You still need a certificate from a CA
+// Self-signed certificates won't be trusted by PDF readers
+```
+
+## Visible Signatures
+
+Visible signature appearances are not yet implemented. Currently, all signatures are invisible (the signature is embedded in the PDF but doesn't appear visually on any page).
+
+For now, you can add visual elements like text or images separately using the drawing API, then sign the document.
+
+## Signature Fields
+
+Sign an existing signature field:
+
+```ts
+const form = await pdf.getForm();
+const signatureField = form.getSignatureField("SignatureField1");
+
+await pdf.sign({
+  signer,
+  fieldName: "SignatureField1",
+});
+```
+
+### Create New Signature Field
+
+If the field doesn't exist, it will be created automatically:
+
+```ts
+await pdf.sign({
+  signer,
+  fieldName: "ApprovalSignature",
+});
+```
+
+## Multiple Signatures
+
+PDFs can have multiple signatures. Each subsequent signature must use incremental saving:
+
+```ts
+// First signature
+const pdf = await PDF.load(bytes);
+const firstSigned = await pdf.sign({ signer: signer1 });
+
+// Second signature
+const pdf2 = await PDF.load(firstSigned.bytes);
+const fullySigned = await pdf2.sign({ signer: signer2 });
+
+await writeFile("signed.pdf", fullySigned.bytes);
+```
+
+## Check Existing Signatures
+
+```ts
+import { SignatureField } from "@libpdf/core";
+
+const form = await pdf.getForm();
+const signatureFields = form.getSignatureFields();
+
+for (const field of signatureFields) {
+  if (field.isSigned()) {
+    console.log(`Field "${field.name}" is signed`);
+  } else {
+    console.log(`Field "${field.name}" is unsigned`);
+  }
+}
+```
+
+## Signature Reason and Location
+
+Add metadata to the signature:
+
+```ts
+await pdf.sign({
+  signer,
+  reason: "I approve this document",
+  location: "New York, NY",
+  contactInfo: "john@example.com",
+});
+```
+
+## Timestamp Servers
+
+Popular free timestamp servers:
+
+| Provider | URL |
+|----------|-----|
+| DigiCert | `http://timestamp.digicert.com` |
+| Sectigo | `http://timestamp.sectigo.com` |
+| FreeTSA | `https://freetsa.org/tsr` |
+
+For production, use a timestamp server from your certificate provider.
+
+## Complete Example
+
+```ts
+import { readFile, writeFile } from "fs/promises";
+import { PDF, P12Signer, HttpTimestampAuthority } from "@libpdf/core";
+
+async function signDocument() {
+  // Load document
+  const pdfBytes = await readFile("contract.pdf");
+  const pdf = await PDF.load(pdfBytes);
+  
+  // Create signer
+  const p12Bytes = await readFile("my-certificate.p12");
+  const signer = await P12Signer.create(p12Bytes, "p12-password");
+  
+  // Create timestamp authority
+  const tsa = new HttpTimestampAuthority("http://timestamp.digicert.com");
+  
+  // Sign with timestamp
+  const signed = await pdf.sign({
+    signer,
+    level: "B-LT",
+    timestampAuthority: tsa,
+    reason: "Contract approval",
+    location: "San Francisco, CA",
+    fieldName: "ApprovalSignature",
+  });
+  
+  // Save with incremental update
+  await writeFile("contract-signed.pdf", signed.bytes);
+  
+  console.log("Document signed successfully");
+}
+
+signDocument().catch(console.error);
+```
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Unknown signature" in Adobe | Certificate not trusted | Use a CA-issued certificate |
+| Signature invalid after edit | Document modified | Use incremental save |
+| Timestamp failed | Server unreachable | Check network/firewall |
+| Certificate expired | Old certificate | Renew certificate |
+
+## Security Best Practices
+
+1. **Protect your private key** - Never share .p12 files or expose passwords
+2. **Use trusted certificates** - Self-signed certs show warnings
+3. **Include timestamps** - B-T or higher for legal validity
+4. **Use incremental saves** - Preserves previous signatures
+5. **Verify after signing** - Open in Adobe Reader to confirm
+
+## Limitations
+
+- **Verification not implemented** - LibPDF can sign but not verify signatures
+- **LTV requires network** - B-LT and B-LTA need access to OCSP/CRL servers
+- **Visible signatures not supported** - All signatures are invisible (no visual appearance on pages)
+
+## Next Steps
+
+<Cards>
+  <Card title="Encryption" href="/docs/guides/encryption">
+    Password-protect signed documents
+  </Card>
+  <Card title="Forms" href="/docs/guides/forms">
+    Sign form signature fields
+  </Card>
+</Cards>

@@ -1,0 +1,224 @@
+---
+title: Text Extraction
+description: Extract text from PDFs with position information and search capabilities.
+---
+
+# Text Extraction
+
+This guide covers extracting text from PDF pages, including position information and search.
+
+## Simple Extraction
+
+Get all text from a page as a single string:
+
+```ts
+const page = await pdf.getPage(0);
+const { text } = await page.extractText();
+
+console.log(text);
+```
+
+The text is extracted in reading order (top-to-bottom, left-to-right for LTR languages).
+
+## Extract All Pages
+
+```ts
+const allText: string[] = [];
+
+for (const page of await pdf.getPages()) {
+  const { text } = await page.extractText();
+  allText.push(text);
+}
+
+const fullDocument = allText.join("\n\n");
+```
+
+## Text with Positions
+
+Get detailed information about each text span:
+
+```ts
+const { lines } = await page.extractText();
+
+for (const line of lines) {
+  for (const span of line.spans) {
+    console.log({
+      text: span.text,
+      x: span.bbox.x,           // Left edge in points
+      y: span.bbox.y,           // Bottom edge in points
+      width: span.bbox.width,   // Bounding box width
+      height: span.bbox.height, // Bounding box height
+      fontSize: span.fontSize,
+    });
+  }
+}
+```
+
+### Coordinate System
+
+PDF coordinates start from the **bottom-left** corner:
+- `x` increases going right
+- `y` increases going up
+
+To convert to top-left origin (like screen coordinates):
+
+```ts
+const pageHeight = page.height;
+
+for (const line of lines) {
+  const screenY = pageHeight - line.bbox.y - line.bbox.height;
+  console.log(`"${line.text}" at screen position (${line.bbox.x}, ${screenY})`);
+}
+```
+
+## Search Text
+
+Find text matching a pattern:
+
+### String Search
+
+```ts
+const results = await page.findText("invoice");
+
+for (const match of results) {
+  console.log(`Found at:`, match.bbox);
+}
+```
+
+### Regex Search
+
+```ts
+// Find invoice numbers
+const invoices = await page.findText(/INV-\d{6}/g);
+
+// Find email addresses
+const emails = await page.findText(/[\w.-]+@[\w.-]+\.\w+/g);
+
+// Case-insensitive
+const terms = await page.findText(/important/gi);
+```
+
+### Search Results
+
+Each result includes:
+
+```ts
+interface TextMatch {
+  text: string;      // The matched text
+  bbox: {
+    x: number;       // Left edge
+    y: number;       // Bottom edge
+    width: number;
+    height: number;
+  };
+  pageIndex: number; // Page where found
+  charBoxes: BoundingBox[]; // Individual character positions
+}
+```
+
+## Search Entire Document
+
+```ts
+async function searchDocument(pdf: PDF, pattern: string | RegExp) {
+  const results: TextMatch[] = [];
+  
+  for (const page of await pdf.getPages()) {
+    const pageResults = await page.findText(pattern);
+    results.push(...pageResults);
+  }
+  
+  return results;
+}
+
+const allMatches = await searchDocument(pdf, /confidential/gi);
+console.log(`Found ${allMatches.length} matches`);
+```
+
+## Extract by Region
+
+Extract text from a specific area of the page:
+
+```ts
+const { lines } = await page.extractText();
+
+// Define region (in points from bottom-left)
+const region = { x: 50, y: 700, width: 200, height: 50 };
+
+const inRegion = lines.filter(line => 
+  line.bbox.x >= region.x &&
+  line.bbox.x + line.bbox.width <= region.x + region.width &&
+  line.bbox.y >= region.y &&
+  line.bbox.y + line.bbox.height <= region.y + region.height
+);
+
+const regionText = inRegion.map(line => line.text).join(" ");
+```
+
+## Working with Lines
+
+Text is automatically grouped into lines. Each line contains spans with the same baseline:
+
+```ts
+const { lines } = await page.extractText();
+
+// Lines are already sorted top-to-bottom
+for (const line of lines) {
+  console.log(`Line at y=${line.baseline}: "${line.text}"`);
+  
+  // Access individual spans within the line
+  for (const span of line.spans) {
+    console.log(`  Span: "${span.text}" (font: ${span.fontName}, size: ${span.fontSize})`);
+  }
+}
+```
+
+## Handle Encoding Issues
+
+Most modern PDFs include ToUnicode maps for proper text extraction. For older PDFs:
+
+```ts
+const { text } = await page.extractText();
+
+// Check for extraction issues
+if (text.includes("\uFFFD") || text.length === 0) {
+  console.warn("Text extraction may be incomplete");
+  console.warn("PDF may use non-embedded fonts or missing ToUnicode maps");
+}
+```
+
+### Known Limitations
+
+| Issue | Cause | Workaround |
+|-------|-------|------------|
+| Garbled text | Missing ToUnicode map | None - PDF must include mapping |
+| Empty extraction | Text is actually images | Use OCR (external tool) |
+| Wrong order | Complex layouts | Use position data to reorder |
+| Missing CJK text | Predefined CMap | Only Identity-H/V supported |
+
+## Performance Tips
+
+For large documents:
+
+```ts
+// Process pages one at a time to limit memory
+for (let i = 0; i < pdf.getPageCount(); i++) {
+  const page = await pdf.getPage(i);
+  const { text } = await page.extractText();
+  
+  // Process text immediately
+  await processPageText(i, text);
+  
+  // Text data can now be garbage collected
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Forms" href="/docs/guides/forms">
+    Extract data from form fields
+  </Card>
+  <Card title="Pages" href="/docs/guides/pages">
+    Navigate and manipulate pages
+  </Card>
+</Cards>

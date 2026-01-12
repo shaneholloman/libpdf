@@ -24,7 +24,7 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const MDX = page.data.body;
 
   const gitConfig = {
-    user: "libpdf",
+    user: "libpdf-js",
     repo: "core",
     branch: "main",
   };

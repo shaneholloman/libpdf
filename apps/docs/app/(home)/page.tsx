@@ -75,7 +75,7 @@ function Hero() {
             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <a
-            href="https://github.com/libpdf/core"
+            href="https://github.com/libpdf-js/core"
             className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-medium rounded-lg border border-border hover:border-foreground/20 hover:bg-muted/50 transition-all"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -438,7 +438,7 @@ function SponsorsSection() {
         </div>
         <div className="text-center">
           <a
-            href="https://github.com/sponsors/libpdf"
+            href="https://github.com/sponsors/libpdf-js"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"

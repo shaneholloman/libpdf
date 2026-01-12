@@ -5,6 +5,6 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: 'LibPDF',
     },
-    githubUrl: 'https://github.com/libpdf/core',
+    githubUrl: 'https://github.com/libpdf-js/core',
   };
 }

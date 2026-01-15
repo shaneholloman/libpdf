@@ -8,7 +8,7 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 
 - [x] **Load encrypted PDFs** — Support password-protected documents (user password, owner password)
 - [x] **Decrypt on load** — Handle all standard encryption handlers (RC4, AES-128, AES-256)
-- [ ] **Encrypt on save** — Apply encryption when writing PDFs (encryption logic done, needs writer)
+- [x] **Encrypt on save** — Apply encryption when writing PDFs (setProtection/removeProtection API)
 
 ### 2. Digital Signatures
 
@@ -22,7 +22,7 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 
 - [x] **Add/remove pages** — Insert, delete, reorder pages
 - [x] **Add/remove content** — Draw text, images, graphics on pages
-- [ ] **Add/remove annotations** — Comments, highlights, stamps, etc.
+- [x] **Add/remove annotations** — Comments, highlights, stamps, links, shapes, etc. (beta)
 - [x] **Add/remove form fields** — Text fields, checkboxes, dropdowns, etc.
 - [x] **Incremental updates** — Append changes without rewriting (critical for signatures)
 
@@ -36,7 +36,7 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 ### 5. Flattening
 
 - [x] **Flatten forms** — Bake form field appearances into page content
-- [ ] **Flatten annotations** — Bake annotation appearances into page content
+- [x] **Flatten annotations** — Bake annotation appearances into page content
 - [x] **Flatten layers** — Merge optional content groups (required before signing to prevent hidden content attacks)
 
 ### 6. Attachments
@@ -52,10 +52,11 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 - [x] **Page embedding** — Embed pages as Form XObjects for overlays/watermarks
 - [ ] **Page imposition** — N-up, booklet layouts (stretch)
 
-### 8. Text Extraction _(stretch)_
+### 8. Text Extraction
 
-- [ ] **Extract text** — Get text content from pages
-- [ ] **Preserve reading order** — Handle multi-column layouts
+- [x] **Extract text** — Get text content from pages (extractText API)
+- [x] **Search text** — Find text patterns with bounding box results (findText API)
+- [x] **Preserve reading order** — Line grouping based on baseline/font
 - [ ] **Extract from annotations** — Include comment text, form values
 
 ### 9. Creation
@@ -64,7 +65,7 @@ This document captures the high-level goals for @libpdf/core. Use this to steer 
 - [x] **Add pages** — Create blank or content-filled pages
 - [x] **Draw content** — Text, images, paths, shapes
 - [x] **Embed fonts** — Subset and embed TrueType/OpenType fonts
-- [ ] **Add annotations** — Links, comments, stamps
+- [x] **Add annotations** — Links, comments, stamps, text markup, shapes (beta)
 - [x] **Add form fields** — Interactive forms
 
 ---
@@ -87,15 +88,16 @@ Most commonly requested features:
 2. **Digital Signatures** — Enterprise requirement ✓ (signing done, verification pending)
 3. **Merge/Split** — Common document workflows ✓
 4. **Attachments** — Common for invoices, contracts ✓
-5. **Layer Flattening** — Required before signing (security)
+5. **Layer Flattening** — Required before signing (security) ✓
+6. **Encryption on Save** — Protect documents with passwords ✓
 
 ### Tier 3: Complete Solution
 
 Full-featured library:
 
-1. **Flattening** — Print-ready documents ✓ (forms and layers done, annotations pending)
-2. **Annotation Modification** — Review workflows
-3. **Text Extraction** — Search, indexing, accessibility
+1. **Flattening** — Print-ready documents ✓ (forms, layers, and annotations)
+2. **Annotation Modification** — Review workflows ✓ (beta)
+3. **Text Extraction** — Search, indexing, accessibility ✓
 
 ### Tier 4: Stretch
 

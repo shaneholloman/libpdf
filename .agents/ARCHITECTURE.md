@@ -9,6 +9,12 @@ This document outlines the architecture of @libpdf/core. It's a living document 
 │                      High-Level API                             │
 │   (PDF, PDFPage, PDFForm, PDFAttachments, PDFSignature, PDFImage)│
 ├─────────────────────────────────────────────────────────────────┤
+│                    Annotations Layer                            │
+│   (PDFAnnotation types, appearance generation, flattening)      │
+├─────────────────────────────────────────────────────────────────┤
+│                       Text Layer                                │
+│     (TextExtractor, TextState, LineGrouper, text-search)        │
+├─────────────────────────────────────────────────────────────────┤
 │                      Drawing Layer                              │
 │    (DrawingContext, PathBuilder, TextLayout, ColorHelpers)      │
 ├─────────────────────────────────────────────────────────────────┤
@@ -34,7 +40,7 @@ This document outlines the architecture of @libpdf/core. It's a living document 
 │           Top-level orchestration and document access           │
 ├─────────────────────────────────────────────────────────────────┤
 │                     Security Layer                              │
-│      (StandardSecurityHandler, Ciphers, Key Derivation)         │
+│   (StandardSecurityHandler, Ciphers, Key Derivation, Encryption)│
 ├─────────────────────────────────────────────────────────────────┤
 │                      Object Layer                               │
 │    (PdfDict, PdfArray, PdfStream, PdfRef, PdfName, etc.)        │
@@ -749,6 +755,109 @@ Embedded file specification handling.
 
 ---
 
+## Annotations Layer (`src/annotations/`)
+
+PDF annotation support for reading, creating, and flattening annotations. **Status: Beta**
+
+### Supported Annotation Types
+
+| Type                    | Class                         | Features                              |
+| ----------------------- | ----------------------------- | ------------------------------------- |
+| Text markup (highlight) | `PDFHighlightAnnotation`      | QuadPoints, color, opacity            |
+| Text markup (underline) | `PDFUnderlineAnnotation`      | QuadPoints with appearance generation |
+| Text markup (strikeout) | `PDFStrikeOutAnnotation`      | QuadPoints with appearance generation |
+| Text markup (squiggly)  | `PDFSquigglyAnnotation`       | QuadPoints with wavy line appearance  |
+| Link                    | `PDFLinkAnnotation`           | URI, GoTo, Named destinations         |
+| Text (sticky note)      | `PDFTextAnnotation`           | Icons, open/closed state              |
+| FreeText                | `PDFFreeTextAnnotation`       | Direct text on page                   |
+| Line                    | `PDFLineAnnotation`           | Start/end points, line endings        |
+| Square                  | `PDFSquareAnnotation`         | Rectangle with border/fill            |
+| Circle                  | `PDFCircleAnnotation`         | Ellipse with border/fill              |
+| Polygon                 | `PDFPolygonAnnotation`        | Closed path with vertices             |
+| Polyline                | `PDFPolylineAnnotation`       | Open path with vertices               |
+| Ink                     | `PDFInkAnnotation`            | Freehand drawing paths                |
+| Stamp                   | `PDFStampAnnotation`          | Standard and custom stamps            |
+| Caret                   | `PDFCaretAnnotation`          | Text insertion point                  |
+| FileAttachment          | `PDFFileAttachmentAnnotation` | Embedded file with icon               |
+| Popup                   | `PDFPopupAnnotation`          | Associated popup for markup annots    |
+
+### Usage
+
+```typescript
+// Get annotations from a page
+const annotations = await page.getAnnotations();
+
+// Add annotations
+page.addHighlightAnnotation({ rects: [...], color: rgb(1, 1, 0) });
+page.addLinkAnnotation({ rect: [...], uri: "https://example.com" });
+page.addTextAnnotation({ rect: [...], contents: "Note text" });
+page.addStampAnnotation({ rect: [...], stampName: "Approved" });
+
+// Remove annotations
+await page.removeAnnotation(annotation);
+await page.removeAnnotations({ subtypes: ["Highlight", "Underline"] });
+
+// Flatten annotations
+await page.flattenAnnotations();
+```
+
+### Architecture
+
+| Component                 | Purpose                                     |
+| ------------------------- | ------------------------------------------- |
+| `PDFAnnotation`           | Base class for all annotation types         |
+| `PDFMarkupAnnotation`     | Base for annotations with popup/reply       |
+| `PDFTextMarkupAnnotation` | Base for highlight/underline/etc.           |
+| `factory.ts`              | Creates annotation objects from PDF dicts   |
+| `appearance/*.ts`         | Generates appearance streams for flattening |
+
+---
+
+## Text Layer (`src/text/`)
+
+Text extraction from PDF content streams with position tracking.
+
+### Usage
+
+```typescript
+// Extract text from a page
+const text = await page.extractText();
+// Returns: "Hello World\nSecond line..."
+
+// Extract with position information
+const result = await page.extractText({ includePositions: true });
+// Returns: { text: "...", lines: [{ text, chars: [{ char, x, y, width, height }] }] }
+
+// Search for text
+const matches = await page.findText("search term");
+// Returns: [{ text, rect: { x, y, width, height }, pageIndex }]
+
+// Search with regex
+const matches = await page.findText(/pattern/gi);
+
+// Document-level search
+const allMatches = await pdf.findText("term");
+```
+
+### Components
+
+| Component       | Purpose                                          |
+| --------------- | ------------------------------------------------ |
+| `TextExtractor` | Parses content streams, tracks text state        |
+| `TextState`     | Manages text matrix, font, and positioning       |
+| `LineGrouper`   | Groups characters into lines based on baseline   |
+| `text-search`   | String and regex search with bounding boxes      |
+| `types.ts`      | TextChar, TextLine, TextSpan, SearchResult types |
+
+### Supported Text Operators
+
+- Positioning: `Td`, `TD`, `Tm`, `T*`
+- Showing: `Tj`, `TJ`, `'`, `"`
+- State: `Tf`, `Tc`, `Tw`, `Tz`, `TL`, `Ts`, `Tr`
+- Graphics: `cm`, `q`, `Q` (matrix transformations)
+
+---
+
 ## Data Flow
 
 ### Opening a PDF
@@ -911,15 +1020,17 @@ When implementing, consult the reference libraries in `checkouts/`:
 - [x] Drawing API (drawText, drawImage, drawRectangle, drawLine, drawCircle, drawEllipse, drawPath)
 - [x] Text layout (word wrapping, alignment, multiline)
 - [x] Layer (OCG) detection and flattening
+- [x] Document encryption/protection API (setProtection, removeProtection)
+- [x] Text extraction with position tracking and search
+- [x] Annotation support (beta) - text markup, links, shapes, stamps, etc.
+- [x] Annotation flattening
 
 ### Partial / In Progress
 
 - [ ] Linearized PDF fast-open (detection only, no optimization)
-- [ ] Text extraction (fonts decode, but no layout analysis)
 
 ### Not Yet Built
 
-- [ ] Annotation support (read/write/flatten)
 - [ ] Digital signature verification
 - [ ] Certificate-based decryption (/Adobe.PubSec handler)
 - [ ] Outline/bookmark support

@@ -23,12 +23,12 @@
         "oxlint": "^1.39.0",
         "oxlint-tsgolint": "^0.11.1",
         "tsdown": "^0.18.4",
+        "typescript": "^5",
         "vitest": "^4.0.16",
       },
       "peerDependencies": {
         "@google-cloud/kms": "^5.0.0",
         "@google-cloud/secret-manager": "^6.0.0",
-        "typescript": "^5",
       },
       "optionalPeers": [
         "@google-cloud/kms",

@@ -13,7 +13,7 @@
     "signing",
     "typescript"
   ],
-  "homepage": "https://libpdf.documenso.com",
+  "homepage": "https://libpdf.dev",
   "bugs": {
     "url": "https://github.com/LibPDF-js/core/issues"
   },
@@ -46,20 +46,20 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "bun --env-file=.env.local vitest",
-    "test:run": "bun --env-file=.env.local vitest run",
-    "test:coverage": "bun --env-file=.env.local vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "lint": "oxlint --type-aware && oxfmt --check",
-    "lint:fix": "oxlint --type-aware --fix && oxfmt",
-    "format": "oxfmt",
+    "docs:build": "bun run --cwd apps/docs build",
+    "docs:dev": "bun run --cwd apps/docs dev",
     "examples": "bun run examples/run-all.ts",
     "examples:quiet": "bun run examples/run-all.ts --quiet",
-    "docs:dev": "bun run --cwd apps/docs dev",
-    "docs:build": "bun run --cwd apps/docs build",
-    "prepublishOnly": "bun run build",
+    "format": "oxfmt",
+    "lint": "oxlint --type-aware && oxfmt --check",
+    "lint:fix": "oxlint --type-aware --fix && oxfmt",
     "prepare": "husky",
-    "release": "./scripts/release.sh"
+    "prepublishOnly": "bun run build",
+    "release": "./scripts/release.sh",
+    "test": "bun --env-file=.env.local vitest",
+    "test:coverage": "bun --env-file=.env.local vitest run --coverage",
+    "test:run": "bun --env-file=.env.local vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@noble/ciphers": "^2.1.1",
@@ -80,12 +80,12 @@
     "oxlint": "^1.39.0",
     "oxlint-tsgolint": "^0.11.1",
     "tsdown": "^0.18.4",
+    "typescript": "^5",
     "vitest": "^4.0.16"
   },
   "peerDependencies": {
     "@google-cloud/kms": "^5.0.0",
-    "@google-cloud/secret-manager": "^6.0.0",
-    "typescript": "^5"
+    "@google-cloud/secret-manager": "^6.0.0"
   },
   "peerDependenciesMeta": {
     "@google-cloud/kms": {
@@ -94,5 +94,8 @@
     "@google-cloud/secret-manager": {
       "optional": true
     }
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

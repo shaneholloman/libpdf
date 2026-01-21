@@ -129,9 +129,24 @@ const output = await pdf.save();
 
 LibPDF runs everywhere:
 
-- **Node.js** 18+
+- **Node.js** 20+
 - **Bun**
 - **Browsers** (modern, with Web Crypto)
+
+## Known Limitations
+
+Some features are not yet implemented:
+
+| Feature                     | Status           | Notes                                  |
+| --------------------------- | ---------------- | -------------------------------------- |
+| Signature verification      | Not implemented  | Signing works; verification is planned |
+| TrueType Collections (.ttc) | Not supported    | Extract individual fonts first         |
+| JBIG2 image decoding        | Passthrough only | Images preserved but not decoded       |
+| JPEG2000 (JPX) decoding     | Passthrough only | Images preserved but not decoded       |
+| Certificate encryption      | Not supported    | Password encryption works              |
+| JavaScript actions          | Ignored          | Form calculations not executed         |
+
+These limitations are documented to set expectations. Most don't affect typical use cases like form filling, signing, or document manipulation.
 
 ## Philosophy
 

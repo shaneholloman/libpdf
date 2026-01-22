@@ -2693,15 +2693,7 @@ export class PDFPage {
       const pdfFont = parseFont(fontDictEntry, {
         resolveRef: ref => {
           if (ref instanceof PdfRef && this.ctx) {
-            const key = `${ref.objectNumber} ${ref.generation} R`;
-            const preResolved = resolvedRefs.get(key);
-
-            if (preResolved) {
-              return preResolved;
-            }
-
-            // Fallback to sync getObject (works for some refs)
-            const obj = this.ctx.getObject(ref);
+            const obj = this.ctx.resolve(ref);
 
             if (obj instanceof PdfDict || obj instanceof PdfArray || obj instanceof PdfStream) {
               return obj;

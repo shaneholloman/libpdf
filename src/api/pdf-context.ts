@@ -122,13 +122,6 @@ export class PDFContext {
   }
 
   /**
-   * Get an object by reference (sync, only if already loaded).
-   */
-  getObject(ref: PdfRef): PdfObject | null {
-    return this.registry.getObject(ref);
-  }
-
-  /**
    * Get the reference for an object.
    */
   getRef(obj: PdfObject): PdfRef | null {

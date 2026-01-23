@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-23
+
+### Fixed
+
+- Page content corruption when calling many draw operations (e.g., drawing 100+ rectangles). A missing return statement caused nested `Contents` arrays that lost original page content.
+
+### Changed
+
+- PdfDict getter methods (`get`, `getArray`, `getDict`, etc.) now accept an optional resolver callback to automatically dereference `PdfRef` values. This simplifies internal code and reduces boilerplate when working with PDF objects.
+
+### Internal
+
+- Migrated codebase to use the new ref resolver pattern, removing ~450 lines of manual `instanceof PdfRef` checks.
+
+## [0.1.1] - 2026-01-22
+
+### Fixed
+
+- Resources stored as indirect references on page dictionaries are now properly resolved.
+
+### Changed
+
+- Unified `RefResolver` type across the codebase.
+- `PDF.getObject()` removed in favor of direct `registry.resolve()` calls.
+
 ## [0.1.0] - 2026-01-21
 
 First public release. LibPDF provides a complete PDF toolkit for TypeScript with parsing, modification, and generation capabilities.

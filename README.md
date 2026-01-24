@@ -2,7 +2,7 @@
 
 A modern PDF library for TypeScript. Parse, modify, and generate PDFs with a clean, intuitive API.
 
-> **Beta Software**: LibPDF is under active development. APIs may change between minor versions. Not yet recommended for production use.
+> **Beta Software**: LibPDF is under active development and APIs may change between minor versions, but we use it in production at [Documenso](https://documenso.com) and consider it ready for real-world use.
 
 ## Why LibPDF?
 

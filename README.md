@@ -1,5 +1,12 @@
 # LibPDF
 
+[![npm](https://img.shields.io/npm/v/@libpdf/core)](https://www.npmjs.com/package/@libpdf/core)
+[![npm downloads](https://img.shields.io/npm/dm/@libpdf/core)](https://www.npmjs.com/package/@libpdf/core)
+[![CI](https://github.com/LibPDF-js/core/actions/workflows/ci.yml/badge.svg)](https://github.com/LibPDF-js/core/actions/workflows/ci.yml)
+[![GitHub stars](https://img.shields.io/github/stars/libpdf-js/core?style=flat)](https://github.com/LibPDF-js/core)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
 A modern PDF library for TypeScript. Parse, modify, and generate PDFs with a clean, intuitive API.
 
 > **Beta Software**: LibPDF is under active development and APIs may change between minor versions, but we use it in production at [Documenso](https://documenso.com) and consider it ready for real-world use.

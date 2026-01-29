@@ -2200,8 +2200,27 @@ export class PDFPage {
     }
 
     if (existingContents instanceof PdfRef) {
-      // Reference to a stream - wrap in array with our content first
-      this.dict.set("Contents", new PdfArray([newContent, existingContents]));
+      // Resolve the reference to check if it's an array or a stream
+      const resolved = this.ctx.resolve(existingContents);
+
+      if (resolved instanceof PdfArray) {
+        // Reference points to an array of streams - prepend our stream to a new array
+        // containing all items from the resolved array
+        const newArray = new PdfArray([newContent]);
+
+        for (let i = 0; i < resolved.length; i++) {
+          const item = resolved.at(i);
+
+          if (item) {
+            newArray.push(item);
+          }
+        }
+
+        this.dict.set("Contents", newArray);
+      } else {
+        // Reference points to a single stream - wrap in array with our content first
+        this.dict.set("Contents", new PdfArray([newContent, existingContents]));
+      }
 
       // Mark as modified to prevent double-wrapping in appendContent
       this._contentWrapped = true;
@@ -2260,7 +2279,29 @@ export class PDFPage {
       const QStream = this.createContentStream("\nQ");
 
       if (existingContents instanceof PdfRef) {
-        this.dict.set("Contents", new PdfArray([qStream, existingContents, QStream, newContent]));
+        // Resolve the reference to check if it's an array or a stream
+        const resolved = this.ctx.resolve(existingContents);
+
+        if (resolved instanceof PdfArray) {
+          // Reference points to an array of streams - expand it
+          const newArray = new PdfArray([qStream]);
+
+          for (let i = 0; i < resolved.length; i++) {
+            const item = resolved.at(i);
+
+            if (item) {
+              newArray.push(item);
+            }
+          }
+
+          newArray.push(QStream);
+          newArray.push(newContent);
+
+          this.dict.set("Contents", newArray);
+        } else {
+          // Reference points to a single stream
+          this.dict.set("Contents", new PdfArray([qStream, existingContents, QStream, newContent]));
+        }
 
         return;
       }

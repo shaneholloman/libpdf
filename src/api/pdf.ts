@@ -125,6 +125,26 @@ export interface SaveOptions {
    * @default false
    */
   subsetFonts?: boolean;
+
+  /**
+   * Compress uncompressed streams with FlateDecode (default: true).
+   *
+   * When enabled, streams without a /Filter entry will be compressed
+   * before writing. Streams that already have filters (including image
+   * formats like DCTDecode/JPXDecode) are left unchanged.
+   */
+  compressStreams?: boolean;
+
+  /**
+   * Minimum stream size in bytes to attempt compression (default: 512).
+   *
+   * Streams smaller than this threshold are written uncompressed.
+   * Deflate initialization has a fixed overhead that dominates for small
+   * payloads, and tiny streams rarely achieve meaningful compression.
+   *
+   * Set to 0 to compress all streams regardless of size.
+   */
+  compressionThreshold?: number;
 }
 
 /**
@@ -1698,6 +1718,7 @@ export class PDF {
    * const [duplicate] = await pdf.copyPagesFrom(pdf, [0], { insertAt: 1 });
    * ```
    */
+  // oxlint-disable-next-line typescript/require-await -- Public async API kept for backward compat; ObjectCopier is sync.
   async copyPagesFrom(
     source: PDF,
     indices: number[],
@@ -1729,7 +1750,7 @@ export class PDF {
         throw new Error(`Source page ${index} not found`);
       }
 
-      const copiedPageRef = await copier.copyPage(srcPage.ref);
+      const copiedPageRef = copier.copyPage(srcPage.ref);
       copiedRefs.push(copiedPageRef);
     }
 
@@ -1824,6 +1845,7 @@ export class PDF {
    * }
    * ```
    */
+  // oxlint-disable-next-line typescript/require-await -- Public async API kept for backward compat; ObjectCopier is sync.
   async embedPage(source: PDF, pageIndex: number): Promise<PDFEmbeddedPage> {
     const srcPage = source.getPage(pageIndex);
 
@@ -1842,7 +1864,7 @@ export class PDF {
     let resources: PdfDict;
 
     if (srcResources) {
-      const copied = await copier.copyObject(srcResources);
+      const copied = copier.copyObject(srcResources);
 
       // This is guaranteed by our checks above
       resources = copied instanceof PdfDict ? copied : new PdfDict();
@@ -3139,6 +3161,8 @@ export class PDF {
         id: fileId,
         useXRefStream,
         securityHandler,
+        compressStreams: options.compressStreams,
+        compressionThreshold: options.compressionThreshold,
       });
 
       // Reset pending security state after successful save
@@ -3156,6 +3180,8 @@ export class PDF {
       id: fileId,
       useXRefStream,
       securityHandler,
+      compressStreams: options.compressStreams,
+      compressionThreshold: options.compressionThreshold,
     });
 
     // Reset pending security state after successful save

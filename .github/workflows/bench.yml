@@ -1,9 +1,6 @@
 name: Benchmarks
 
 on:
-  # Run on pushes to main (to keep report up to date)
-  push:
-    branches: [main]
   # Run weekly on Mondays at 06:00 UTC
   schedule:
     - cron: "0 6 * * 1"
